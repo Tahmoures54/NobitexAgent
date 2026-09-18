@@ -40,7 +40,8 @@ psycopg[binary]>=3.2.0,<4.0.0
 
 # ── Auth / crypto ───────────────────────────────────────────
 PyJWT[crypto]>=2.9.0
-google-auth>=2.35.0
+pyotp>=2.9.0
+qrcode[pil]>=7.4.2
 
 # ── Background jobs ─────────────────────────────────────────
 apscheduler>=3.10.4
