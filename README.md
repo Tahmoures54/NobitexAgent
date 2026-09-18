@@ -129,7 +129,7 @@ The service is configured for one process because the scanner cache and schedule
 
 ### Important free-tier limitation
 
-Render's free web service can sleep when idle, and free Render Postgres databases expire after 30 days. The free setup is therefore intended for testing the online version, not unattended continuous trading or permanent data storage. For a continuously running agent, use a paid always-on worker/service and a paid Postgres database. citeturn0search0turn0search6
+Render's free web service can sleep when idle, and free Render Postgres databases expire after 30 days. The free setup is therefore intended for testing the online version, not unattended continuous trading or permanent data storage. For a continuously running agent, use a paid always-on worker/service and a paid Postgres database.
 
 ### Production security
 
