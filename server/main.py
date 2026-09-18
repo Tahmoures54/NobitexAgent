@@ -32,16 +32,10 @@ from server.scheduler import start_scheduler, stop_scheduler
 from server.security import limiter
 
 
-# ══════════════════════════════════════════════════════════
-# Logging must be configured before any other import logs
-# ══════════════════════════════════════════════════════════
 setup_logging()
 logger = logging.getLogger(__name__)
 
 
-# ══════════════════════════════════════════════════════════
-# Lifespan
-# ══════════════════════════════════════════════════════════
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     logger.info("=" * 60)
@@ -49,7 +43,6 @@ async def lifespan(app: FastAPI):
     logger.info("Debug=%s | Database=%s", settings.debug, settings.database_url)
     logger.info("=" * 60)
 
-    # Startup
     if not settings.debug and (
         settings.secret_key.startswith("CHANGE_ME")
         or settings.secret_key.startswith("dev-only")
@@ -58,6 +51,15 @@ async def lifespan(app: FastAPI):
         raise RuntimeError(
             "Production startup refused: SECRET_KEY must be a unique value "
             "with at least 32 characters."
+        )
+
+    if not settings.debug and (
+        settings.totp_encryption_key.startswith("CHANGE_ME")
+        or len(settings.totp_encryption_key) < 32
+    ):
+        raise RuntimeError(
+            "Production startup refused: TOTP_ENCRYPTION_KEY must be a unique "
+            "value with at least 32 characters."
         )
 
     if not settings.debug and settings.database_url.startswith("sqlite"):
@@ -73,15 +75,11 @@ async def lifespan(app: FastAPI):
 
     yield
 
-    # Shutdown
     if settings.run_scheduler:
         stop_scheduler(wait=True)
     logger.info("Shutdown complete")
 
 
-# ══════════════════════════════════════════════════════════
-# App
-# ══════════════════════════════════════════════════════════
 app = FastAPI(
     title=settings.app_name,
     version=settings.app_version,
@@ -92,10 +90,6 @@ app = FastAPI(
     openapi_url="/openapi.json",
 )
 
-
-# ══════════════════════════════════════════════════════════
-# Rate limiting
-# ══════════════════════════════════════════════════════════
 app.state.limiter = limiter
 app.add_middleware(SlowAPIMiddleware)
 
@@ -109,9 +103,6 @@ async def _rate_limit_handler(_request: Request, exc: RateLimitExceeded) -> JSON
     )
 
 
-# ══════════════════════════════════════════════════════════
-# Global exception handlers
-# ══════════════════════════════════════════════════════════
 @app.exception_handler(IntegrityError)
 async def _integrity_handler(request: Request, exc: IntegrityError) -> JSONResponse:
     logger.warning("IntegrityError on %s: %s", request.url.path, exc)
@@ -130,9 +121,6 @@ async def _unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
     )
 
 
-# ══════════════════════════════════════════════════════════
-# Basic security headers
-# ══════════════════════════════════════════════════════════
 @app.middleware("http")
 async def security_headers(request: Request, call_next):
     response = await call_next(request)
@@ -145,9 +133,6 @@ async def security_headers(request: Request, call_next):
     return response
 
 
-# ══════════════════════════════════════════════════════════
-# CORS (only if frontend is hosted elsewhere)
-# ══════════════════════════════════════════════════════════
 if settings.cors_origins:
     app.add_middleware(
         CORSMiddleware,
@@ -160,9 +145,6 @@ if settings.cors_origins:
     logger.info("CORS enabled for %s", settings.cors_origins)
 
 
-# ══════════════════════════════════════════════════════════
-# Routes
-# ══════════════════════════════════════════════════════════
 from server.routes import auth as auth_routes  # noqa: E402
 from server.routes import scan as scan_routes  # noqa: E402
 from server.routes import paper as paper_routes  # noqa: E402
@@ -176,9 +158,6 @@ app.include_router(paper_routes.router)
 app.include_router(admin_routes.router)
 
 
-# ══════════════════════════════════════════════════════════
-# Static frontend
-# ══════════════════════════════════════════════════════════
 WEB_DIR = Path(__file__).resolve().parent.parent / settings.web_dir
 
 if WEB_DIR.exists():
@@ -192,9 +171,6 @@ else:
     )
 
 
-# ══════════════════════════════════════════════════════════
-# Direct execution helper
-# ══════════════════════════════════════════════════════════
 if __name__ == "__main__":
     import uvicorn
     uvicorn.run(
