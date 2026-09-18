@@ -1,0 +1,32 @@
+services:
+  - type: web
+    name: nobitexagent
+    runtime: docker
+    plan: free
+    healthCheckPath: /health
+    autoDeploy: true
+    envVars:
+      - key: SECRET_KEY
+        generateValue: true
+      - key: DEBUG
+        value: "false"
+      - key: DATABASE_URL
+        fromDatabase:
+          name: nobitexagent-db
+          property: connectionString
+      - key: ADMIN_EMAIL
+        sync: false
+      - key: CORS_ORIGINS
+        value: "[]"
+      - key: SCAN_INTERVAL_MINUTES
+        value: "5"
+      - key: PRICES_INTERVAL_SECONDS
+        value: "60"
+      - key: SCAN_LIMIT
+        value: "250"
+
+databases:
+  - name: nobitexagent-db
+    plan: free
+    databaseName: nobitexagent
+    user: nobitexagent
