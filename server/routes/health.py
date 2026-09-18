@@ -12,7 +12,7 @@ import logging
 import time
 from typing import Any
 
-from fastapi import APIRouter, Depends
+from fastapi import APIRouter, Depends, status
 from sqlalchemy import text
 from sqlalchemy.orm import Session
 
@@ -41,7 +41,11 @@ def health_db(db: Session = Depends(get_db)) -> dict[str, Any]:
         return {"status": "ok", "database": "ok"}
     except Exception as exc:
         logger.warning("Health DB check failed: %s", exc)
-        return {"status": "degraded", "database": "unreachable", "error": str(exc)}
+        from fastapi.responses import JSONResponse
+        return JSONResponse(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            content={"status": "degraded", "database": "unreachable", "error": "database unavailable"},
+        )
 
 
 @router.get("/health/full")
