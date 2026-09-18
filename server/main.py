@@ -60,13 +60,16 @@ async def lifespan(app: FastAPI):
             "with at least 32 characters."
         )
 
-    init_db()
-    start_scheduler()
+    if settings.auto_create_db:
+        init_db()
+    if settings.run_scheduler:
+        start_scheduler()
 
     yield
 
     # Shutdown
-    stop_scheduler(wait=True)
+    if settings.run_scheduler:
+        stop_scheduler(wait=True)
     logger.info("Shutdown complete")
 
 
@@ -119,6 +122,21 @@ async def _unhandled_handler(request: Request, exc: Exception) -> JSONResponse:
         status_code=500,
         content={"detail": "Internal server error."},
     )
+
+
+# ══════════════════════════════════════════════════════════
+# Basic security headers
+# ══════════════════════════════════════════════════════════
+@app.middleware("http")
+async def security_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers.setdefault("X-Content-Type-Options", "nosniff")
+    response.headers.setdefault("X-Frame-Options", "DENY")
+    response.headers.setdefault("Referrer-Policy", "strict-origin-when-cross-origin")
+    response.headers.setdefault("Permissions-Policy", "camera=(), microphone=(), geolocation=()")
+    if not settings.debug:
+        response.headers.setdefault("Strict-Transport-Security", "max-age=31536000; includeSubDomains")
+    return response
 
 
 # ══════════════════════════════════════════════════════════
