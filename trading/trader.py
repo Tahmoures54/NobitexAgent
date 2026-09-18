@@ -928,10 +928,6 @@ class TradingBot:
         execution boundary.
         """
         requested = requested_notional
-        if requested is None:
-            requested = getattr(self.config, "fixed_position_toman", None)
-            if requested is None:
-                requested = getattr(self.config, "display_position_size_toman", 1_000_000.0)
 
         price = self.get_quote_price(symbol, side=side)
         if price is None:
@@ -946,6 +942,12 @@ class TradingBot:
         if self.exchange_name == "nobitex":
             display_unit = "TOMAN"
             quote_unit = "RIAL"
+
+        if requested is None:
+            available_quote = max(0.0, float(balance) - float(current_total_exposure or 0.0))
+            usage_pct = float(getattr(self.config, "capital_usage_pct", 90.0))
+            requested_quote = available_quote * usage_pct / 100.0
+            requested = float(convert(requested_quote, quote_unit, display_unit))
 
         size = calculate_position_size(
             price=price,
@@ -1029,11 +1031,10 @@ class TradingBot:
         **kwargs: Any,
     ) -> Dict[str, Any]:
         """Place the configured fixed-size entry (default: 1,000,000 Toman)."""
-        requested = getattr(self.config, "fixed_position_toman", None)
         return self.place_notional_order(
             symbol=symbol,
             side="buy",
-            requested_notional=requested,
+            requested_notional=None,
             current_total_exposure=current_total_exposure,
             **kwargs,
         )
