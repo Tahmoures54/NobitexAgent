@@ -9,6 +9,8 @@ services:
     envVars:
       - key: SECRET_KEY
         generateValue: true
+      - key: TOTP_ENCRYPTION_KEY
+        sync: false
       - key: DEBUG
         value: "false"
       - key: AUTO_CREATE_DB
