@@ -43,33 +43,38 @@ _HISTORY: dict[str, deque[tuple[float, float, float]]] = defaultdict(lambda: deq
 
 def get_cached() -> dict[str, Any]:
     with _LOCK:
-        rows = list(_CACHE["rows"])
-        updated_at = float(_CACHE["updated_at"])
-        error = _CACHE["error"]
-        source = _CACHE["source"]
+        local_rows = list(_CACHE["rows"])
+        local_updated = float(_CACHE["updated_at"])
+        local_error = _CACHE["error"]
+        local_source = _CACHE["source"]
 
-    # Worker and web are separate processes in production. Fall back to the
-    # latest persisted snapshot so every instance sees the same scan result.
-    if not rows:
+    # The web service and dedicated worker are separate processes. Always
+    # reconcile against the latest persisted snapshot so a worker refresh is
+    # immediately visible to every web instance.
+    rows = local_rows
+    updated_at = local_updated
+    error = local_error
+    source = local_source
+    try:
+        from server.models import ScanSnapshot
+        db = SessionLocal()
         try:
-            from server.models import ScanSnapshot
-            db = SessionLocal()
-            try:
-                snapshot = (
-                    db.query(ScanSnapshot)
-                    .order_by(ScanSnapshot.created_at.desc())
-                    .first()
-                )
-                if snapshot:
+            snapshot = (
+                db.query(ScanSnapshot)
+                .order_by(ScanSnapshot.created_at.desc())
+                .first()
+            )
+            if snapshot:
+                persisted_updated = snapshot.created_at.timestamp() if snapshot.created_at else 0.0
+                if persisted_updated > local_updated or not local_rows:
                     rows = json.loads(snapshot.payload)
-                    created = snapshot.created_at
-                    updated_at = created.timestamp() if created else 0.0
-                    source = "nobitex:persisted"
+                    updated_at = persisted_updated
                     error = None
-            finally:
-                db.close()
-        except Exception:
-            logger.exception("Persisted scanner cache read failed")
+                    source = "nobitex:persisted"
+        finally:
+            db.close()
+    except Exception:
+        logger.exception("Persisted scanner cache read failed")
 
     return {
         "rows": rows,
