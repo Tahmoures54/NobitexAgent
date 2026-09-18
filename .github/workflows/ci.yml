@@ -23,7 +23,9 @@ jobs:
         run: python -m compileall -q server analysis api core execution money portfolio trading tests
       - name: Test
         env:
-          SECRET_KEY: ci-test-secret
+          SECRET_KEY: ci-test-secret-key-12345678901234567890
           DATABASE_URL: sqlite:///./data/ci.db
-          DEBUG: "false"
+          DEBUG: "true"
+          AUTO_CREATE_DB: "true"
+          RUN_SCHEDULER: "false"
         run: pytest -q
