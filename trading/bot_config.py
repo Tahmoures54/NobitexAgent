@@ -36,7 +36,7 @@ DEFAULT_MAX_NOTIONAL_QUOTE = 15_000_000.0
 DEFAULT_MIN_NOTIONAL_QUOTE = 10_000_000.0
 DEFAULT_MAX_POSITION_PCT = 20.0
 DEFAULT_MAX_TOTAL_EXPOSURE_PCT = 60.0
-STRATEGY_DEFAULTS_VERSION = 9
+STRATEGY_DEFAULTS_VERSION = 10
 
 DEFAULT_CONFIG_FILE = os.path.join(APPDATA_DIR, "bot_config.json")
 _CREDENTIALS_FILE = os.path.join(APPDATA_DIR, "nobitex_credentials.enc")
@@ -125,11 +125,11 @@ class BotConfig:
     # ── Pure Price Action / Real Movement Strategy ──────────
     pump_threshold_pct: float = 3.0
     movement_lookback_scans: int = 4
-    stop_loss_pct: float = 2.0
-    trailing_distance_pct: float = 1.2
-    trailing_activation_pct: float = 0.6
+    stop_loss_pct: float = 3.0
+    trailing_distance_pct: float = 3.0
+    trailing_activation_pct: float = 3.0
     trailing_stop_enabled: bool = True
-    take_profit_percent: float = 6.0
+    take_profit_percent: float = 50.0
 
     # ── Position Sizing ──────────────────────────────────────
     position_size_mode: str = "fixed"
@@ -139,7 +139,8 @@ class BotConfig:
     quantity_step: float = 0.00000001
     min_quantity: float = 0.0
     fee_buffer_pct: float = 0.25
-    max_position_pct: float = DEFAULT_MAX_POSITION_PCT
+    max_position_pct: float = 90.0
+    capital_usage_pct: float = 90.0
     min_notional_quote: float = DEFAULT_MIN_NOTIONAL_QUOTE
     max_notional_quote: float = DEFAULT_MAX_NOTIONAL_QUOTE
     max_total_exposure_pct: float = DEFAULT_MAX_TOTAL_EXPOSURE_PCT
@@ -420,6 +421,9 @@ NOBITEX_ONLY_DEFAULTS: Dict[str, Any] = {
     "strategy_defaults_version": 7,
     "strategy": "nobitex_momentum",
     "global_signal_source": "Nobitex",
+    "global_pump_threshold_pct": 0.0,
+    "min_nobitex_discount_pct": 0.0,
+    "max_nobitex_discount_pct": 0.0,
     "min_cmc_1h_pct": -100.0,
     "min_global_24h_pct": -100.0,
     "min_volume_change_24h_pct": -100.0,
@@ -428,7 +432,7 @@ NOBITEX_ONLY_DEFAULTS: Dict[str, Any] = {
 
 # v9 — Unified Toman sizing and centralized money-unit boundary.
 MONEY_SIZING_DEFAULTS: Dict[str, Any] = {
-    "strategy_defaults_version": 9,
+    "strategy_defaults_version": 10,
     "display_currency": "TOMAN",
     "display_position_size_toman": 1_000_000.0,
     "fixed_position_toman": 1_000_000.0,
@@ -438,14 +442,15 @@ MONEY_SIZING_DEFAULTS: Dict[str, Any] = {
     "fee_buffer_pct": 0.25,
     "min_notional_quote": 10_000_000.0,
     "max_notional_quote": 15_000_000.0,
-    "max_position_pct": 20.0,
-    "max_total_exposure_pct": 60.0,
+    "max_position_pct": 90.0,
+    "capital_usage_pct": 90.0,
+    "max_total_exposure_pct": 90.0,
 }
 
 # v8 — Eagle Exception: allow strong movers through when BTC dumps.
 EAGLE_DEFAULTS: Dict[str, Any] = {
     "strategy_defaults_version": 8,
-    "btc_dump_exception_enabled": True,
+    "btc_dump_exception_enabled": False,
     "eagle_min_observed_move_pct": 2.5,
     "eagle_min_1h_pct": 2.0,
     "eagle_min_volume_irt": 300_000_000.0,
