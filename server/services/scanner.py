@@ -43,14 +43,41 @@ _HISTORY: dict[str, deque[tuple[float, float, float]]] = defaultdict(lambda: deq
 
 def get_cached() -> dict[str, Any]:
     with _LOCK:
-        return {
-            "rows": list(_CACHE["rows"]),
-            "updated_at": float(_CACHE["updated_at"]),
-            "error": _CACHE["error"],
-            "source": _CACHE["source"],
-            "count": len(_CACHE["rows"]),
-        }
+        rows = list(_CACHE["rows"])
+        updated_at = float(_CACHE["updated_at"])
+        error = _CACHE["error"]
+        source = _CACHE["source"]
 
+    # Worker and web are separate processes in production. Fall back to the
+    # latest persisted snapshot so every instance sees the same scan result.
+    if not rows:
+        try:
+            from server.models import ScanSnapshot
+            db = SessionLocal()
+            try:
+                snapshot = (
+                    db.query(ScanSnapshot)
+                    .order_by(ScanSnapshot.created_at.desc())
+                    .first()
+                )
+                if snapshot:
+                    rows = json.loads(snapshot.payload)
+                    created = snapshot.created_at
+                    updated_at = created.timestamp() if created else 0.0
+                    source = "nobitex:persisted"
+                    error = None
+            finally:
+                db.close()
+        except Exception:
+            logger.exception("Persisted scanner cache read failed")
+
+    return {
+        "rows": rows,
+        "updated_at": updated_at,
+        "error": error,
+        "source": source,
+        "count": len(rows),
+    }
 
 def is_fresh(max_age_seconds: int = 300) -> bool:
     with _LOCK:
@@ -222,8 +249,8 @@ def _enrich(df: pd.DataFrame) -> pd.DataFrame:
         row["Trend Score"] = trend
         row["Market Condition"] = condition
         row["Entry Ready"] = bool(
-            condition in {"STRONG_PUMP", "PUMP", "STRONG_UPTREND"}
-            and pump >= 50 or condition == "STRONG_UPTREND" and trend >= 65
+            (condition in {"STRONG_PUMP", "PUMP", "STRONG_UPTREND"} and pump >= 50)
+            or (condition == "STRONG_UPTREND" and trend >= 65)
         )
         row["Signal"] = (
             "Strong Buy"
