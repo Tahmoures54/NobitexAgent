@@ -5,20 +5,30 @@ from __future__ import annotations
 from datetime import datetime
 from typing import Any, Literal, Optional
 
-from pydantic import BaseModel, ConfigDict, EmailStr, Field
+from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
-# ══════════════════════════════════════════════════════════
-# Auth
-# ══════════════════════════════════════════════════════════
-class RegisterReq(BaseModel):
-    email: EmailStr
-    password: str = Field(min_length=6, max_length=128)
+class ProviderTokenReq(BaseModel):
+    provider: Literal["google", "microsoft"]
+    id_token: str = Field(min_length=20, max_length=20000)
 
 
-class LoginReq(BaseModel):
-    email: EmailStr
-    password: str
+class ProfileUpdateReq(BaseModel):
+    full_name: str = Field(min_length=2, max_length=120)
+    phone_number: str = Field(min_length=7, max_length=32)
+
+    @field_validator("full_name")
+    @classmethod
+    def normalize_name(cls, value: str) -> str:
+        return " ".join(value.strip().split())
+
+    @field_validator("phone_number")
+    @classmethod
+    def normalize_phone(cls, value: str) -> str:
+        value = value.strip().replace(" ", "").replace("-", "").replace("(", "").replace(")", "")
+        if not value.startswith("+") or not value[1:].isdigit():
+            raise ValueError("Phone number must use international format, for example +989121234567.")
+        return value
 
 
 class UserOut(BaseModel):
@@ -26,11 +36,31 @@ class UserOut(BaseModel):
 
     id: int
     email: EmailStr
+    auth_provider: str
+    full_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    profile_complete: bool = False
     plan: str
     is_active: bool
     created_at: datetime
     last_login_at: Optional[datetime] = None
     plan_expires_at: Optional[datetime] = None
+
+    @classmethod
+    def from_user(cls, user: Any) -> "UserOut":
+        return cls(
+            id=user.id,
+            email=user.email,
+            auth_provider=user.auth_provider,
+            full_name=user.full_name,
+            phone_number=user.phone_number,
+            profile_complete=bool(user.full_name and user.phone_number),
+            plan=user.plan,
+            is_active=user.is_active,
+            created_at=user.created_at,
+            last_login_at=user.last_login_at,
+            plan_expires_at=user.plan_expires_at,
+        )
 
 
 class TokenResp(BaseModel):
@@ -39,9 +69,12 @@ class TokenResp(BaseModel):
     user: UserOut
 
 
-# ══════════════════════════════════════════════════════════
-# Scanner
-# ══════════════════════════════════════════════════════════
+class AuthConfigOut(BaseModel):
+    google_client_id: str
+    microsoft_client_id: str
+    microsoft_authority: str
+
+
 class ScanResponse(BaseModel):
     updated_at: float
     count: int
@@ -51,12 +84,9 @@ class ScanResponse(BaseModel):
 class ScanRefreshResp(BaseModel):
     ok: bool
     count: int
-    remaining_today: Optional[int] = None  # None = unlimited
+    remaining_today: Optional[int] = None
 
 
-# ══════════════════════════════════════════════════════════
-# Paper Trading
-# ══════════════════════════════════════════════════════════
 class OpenTradeReq(BaseModel):
     symbol: str = Field(min_length=1, max_length=32)
     side: Literal["long", "short"] = "long"
@@ -108,9 +138,6 @@ class PaperStatsOut(BaseModel):
     avg_pnl_pct: float
 
 
-# ══════════════════════════════════════════════════════════
-# Admin
-# ══════════════════════════════════════════════════════════
 class AdminStatsOut(BaseModel):
     total_users: int
     premium_users: int
@@ -119,9 +146,6 @@ class AdminStatsOut(BaseModel):
     open_trades: int
 
 
-# ══════════════════════════════════════════════════════════
-# Generic
-# ══════════════════════════════════════════════════════════
 class HealthOut(BaseModel):
     status: str
     version: str
@@ -133,8 +157,7 @@ class ErrorResp(BaseModel):
 
 
 __all__ = [
-    "RegisterReq", "LoginReq", "UserOut", "TokenResp",
-    "ScanResponse", "ScanRefreshResp",
-    "OpenTradeReq", "CloseTradeReq", "TradeOut", "PaperStatsOut",
-    "AdminStatsOut", "HealthOut", "ErrorResp",
+    "ProviderTokenReq", "ProfileUpdateReq", "UserOut", "TokenResp", "AuthConfigOut",
+    "ScanResponse", "ScanRefreshResp", "OpenTradeReq", "CloseTradeReq", "TradeOut",
+    "PaperStatsOut", "AdminStatsOut", "HealthOut", "ErrorResp",
 ]
