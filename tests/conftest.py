@@ -124,20 +124,34 @@ def client(db_session) -> Generator[TestClient, None, None]:
 # ══════════════════════════════════════════════════════════
 @pytest.fixture
 def user_credentials() -> dict[str, str]:
-    return {"email": "alice@example.com", "password": "supersecret123"}
+    return {
+        "email": "alice@example.com",
+        "full_name": "Alice Example",
+        "phone_number": "+989121234567",
+    }
+
+
+def _register_and_activate(client, payload):
+    import pyotp
+    resp = client.post("/auth/register", json=payload)
+    assert resp.status_code == 200, resp.text
+    setup = resp.json()
+    code = pyotp.TOTP(setup["secret"]).now()
+    verify = client.post(
+        "/auth/setup/verify",
+        json={"email": payload["email"], "code": code},
+    )
+    assert verify.status_code == 200, verify.text
+    return verify.json()
 
 
 @pytest.fixture
 def free_user(client, user_credentials) -> dict:
-    """Register a free-tier user; returns {token, user}."""
-    resp = client.post("/auth/register", json=user_credentials)
-    assert resp.status_code == 201, resp.text
-    data = resp.json()
+    data = _register_and_activate(client, user_credentials)
     return {
         "token": data["access_token"],
         "user": data["user"],
         "email": user_credentials["email"],
-        "password": user_credentials["password"],
     }
 
 
@@ -148,25 +162,19 @@ def auth_headers(free_user) -> dict[str, str]:
 
 @pytest.fixture
 def pro_user(client, db_session) -> dict:
-    """Register a user and immediately upgrade them to Pro."""
-    creds = {"email": "pro@example.com", "password": "prosecret123"}
-    resp = client.post("/auth/register", json=creds)
-    assert resp.status_code == 201, resp.text
-    data = resp.json()
-
-    # Directly modify plan in the test DB
+    payload = {
+        "email": "pro@example.com",
+        "full_name": "Pro User",
+        "phone_number": "+989121234568",
+    }
+    data = _register_and_activate(client, payload)
     from server.models import User
     user = db_session.get(User, data["user"]["id"])
     assert user is not None
     user.plan = "pro"
     user.plan_expires_at = None
     db_session.commit()
-
-    return {
-        "token": data["access_token"],
-        "user": data["user"],
-        "email": creds["email"],
-    }
+    return {"token": data["access_token"], "user": data["user"], "email": payload["email"]}
 
 
 @pytest.fixture
@@ -176,20 +184,13 @@ def pro_headers(pro_user) -> dict[str, str]:
 
 @pytest.fixture
 def admin_user(client, db_session, monkeypatch) -> dict:
-    """
-    Register a user whose email matches ADMIN_EMAIL.
-    Must reload settings to pick up the overridden ADMIN_EMAIL.
-    """
-    # ADMIN_EMAIL is already set to admin@test.local in env at import time
-    creds = {"email": "admin@test.local", "password": "adminsecret123"}
-    resp = client.post("/auth/register", json=creds)
-    assert resp.status_code == 201, resp.text
-    data = resp.json()
-    return {
-        "token": data["access_token"],
-        "user": data["user"],
-        "email": creds["email"],
+    payload = {
+        "email": "admin@test.local",
+        "full_name": "Admin User",
+        "phone_number": "+989121234569",
     }
+    data = _register_and_activate(client, payload)
+    return {"token": data["access_token"], "user": data["user"], "email": payload["email"]}
 
 
 @pytest.fixture
