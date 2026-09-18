@@ -21,7 +21,8 @@ def upgrade() -> None:
         "users",
         sa.Column("totp_enabled", sa.Boolean(), nullable=False, server_default=sa.false()),
     )
-    op.alter_column("users", "totp_enabled", server_default=None)
+    with op.batch_alter_table("users") as batch:
+        batch.alter_column("totp_enabled", server_default=None)
 
 
 def downgrade() -> None:
