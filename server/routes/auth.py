@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from datetime import datetime, timezone
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from server.auth import (
@@ -35,7 +35,7 @@ def _setup(user: User, secret: str) -> TotpSetupOut:
 
 @router.post("/register", response_model=TotpSetupOut, summary="Register and configure an authenticator app")
 @limiter.limit("5/hour")
-def register(request: Request, req: RegisterReq, db: Session = Depends(get_db)) -> TotpSetupOut:
+def register(request: Request, response: Response, req: RegisterReq, db: Session = Depends(get_db)) -> TotpSetupOut:
     email = str(req.email).strip().lower()
     user = db.query(User).filter(User.email == email).first()
 
@@ -73,6 +73,7 @@ def register(request: Request, req: RegisterReq, db: Session = Depends(get_db)) 
 @limiter.limit("10/minute")
 def verify_setup(
     request: Request,
+    response: Response,
     req: LoginReq,
     db: Session = Depends(get_db),
 ) -> TokenResp:
@@ -112,6 +113,7 @@ def verify_setup(
 @limiter.limit("10/minute")
 def login(
     request: Request,
+    response: Response,
     req: LoginReq,
     db: Session = Depends(get_db),
 ) -> TokenResp:
