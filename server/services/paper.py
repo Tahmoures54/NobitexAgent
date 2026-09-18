@@ -58,7 +58,7 @@ def open_trade(db: Session, user_id: int, req: OpenTradeReq) -> Trade:
     ).all())
     available_cash = max(0.0, float(settings.paper_initial_cash) + closed_pnl - open_notional)
     strategy_notional = available_cash * float(settings.paper_capital_usage_pct) / 100.0
-    notional = min(float(req.size_usd), strategy_notional)
+    notional = strategy_notional
     if notional <= 0:
         raise ValueError("Insufficient virtual paper cash for a new position.")
     position_size = notional / entry
