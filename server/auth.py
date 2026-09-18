@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import logging
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
@@ -27,7 +28,7 @@ oauth2_scheme = HTTPBearer(auto_error=False)
 def _fernet() -> Fernet:
     """Build the Fernet cipher from the dedicated TOTP encryption key."""
     key = base64.urlsafe_b64encode(
-        settings.totp_encryption_key.encode("utf-8")
+        hashlib.sha256(settings.totp_encryption_key.encode("utf-8")).digest()
     )
     return Fernet(key)
 
