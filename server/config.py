@@ -52,12 +52,6 @@ class Settings(BaseSettings):
 
     web_dir: str = "web"
 
-    # External identity providers.
-    google_client_id: str = ""
-    microsoft_client_id: str = ""
-    microsoft_authority: str = "https://login.microsoftonline.com/common/v2.0"
-    microsoft_jwks_url: str = "https://login.microsoftonline.com/common/discovery/v2.0/keys"
-
     @field_validator("secret_key")
     @classmethod
     def _warn_insecure_key(cls, v: str) -> str:
