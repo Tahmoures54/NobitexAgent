@@ -28,6 +28,7 @@ if PROJECT_ROOT not in sys.path:
 
 # ── Set safe env vars BEFORE importing the app ─────────────
 os.environ.setdefault("SECRET_KEY", "test-secret-key-do-not-use-in-production")
+os.environ.setdefault("TOTP_ENCRYPTION_KEY", "test-totp-encryption-key-do-not-use-in-production")
 os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
 os.environ.setdefault("DEBUG", "false")
 os.environ.setdefault("ADMIN_EMAIL", "admin@test.local")
@@ -42,6 +43,42 @@ from sqlalchemy.pool import StaticPool  # noqa: E402
 from server.database import Base, get_db  # noqa: E402
 from server import models  # noqa: F401,E402 — register models
 from server.main import app  # noqa: E402
+
+
+@pytest.fixture(autouse=True)
+def reset_global_test_state():
+    """Reset process-global rate-limit and scanner state between tests."""
+    from server.security import limiter
+    from server.services import scanner
+
+    try:
+        limiter.reset()
+    except AttributeError:
+        try:
+            limiter._storage.reset()
+        except Exception:
+            pass
+
+    with scanner._LOCK:
+        scanner._CACHE["rows"] = []
+        scanner._CACHE["updated_at"] = 0.0
+        scanner._CACHE["error"] = None
+        scanner._CACHE["source"] = None
+        scanner._HISTORY.clear()
+
+    try:
+        from server.routes import scan as scan_routes
+        with scan_routes._guest_lock:
+            scan_routes._guest_usage.clear()
+    except Exception:
+        pass
+
+    yield
+
+    try:
+        limiter.reset()
+    except AttributeError:
+        pass
 
 
 # ══════════════════════════════════════════════════════════
