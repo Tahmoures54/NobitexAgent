@@ -32,7 +32,47 @@ class LoginReq(BaseModel):
     code: str = Field(min_length=6, max_length=6, pattern="^[0-9]{6}$")
 
 
-class ScanResponse
+class TotpSetupOut(BaseModel):
+    secret: str
+    otpauth_uri: str
+    qr_code_data_uri: str
+
+
+class UserOut(BaseModel):
+    model_config = ConfigDict(from_attributes=True)
+
+    id: int
+    email: EmailStr
+    full_name: Optional[str] = None
+    phone_number: Optional[str] = None
+    profile_complete: bool = False
+    plan: str
+    is_active: bool
+    created_at: datetime
+    last_login_at: Optional[datetime] = None
+    plan_expires_at: Optional[datetime] = None
+
+    @classmethod
+    def from_user(cls, user: Any) -> "UserOut":
+        return cls(
+            id=user.id,
+            email=user.email,
+            full_name=user.full_name,
+            phone_number=user.phone_number,
+            profile_complete=bool(user.full_name and user.phone_number),
+            plan=user.plan,
+            is_active=user.is_active,
+            created_at=user.created_at,
+            last_login_at=user.last_login_at,
+            plan_expires_at=user.plan_expires_at,
+        )
+
+
+class TokenResp(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    user: UserOut
+
 
 class ScanResponse(BaseModel):
     updated_at: float
