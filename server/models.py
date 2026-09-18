@@ -101,6 +101,10 @@ class Trade(Base):
 
     stop_loss: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     take_profit: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    highest_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    lowest_price: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    trailing_stop: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
+    trailing_active: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
 
     pnl_pct: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
     pnl_usd: Mapped[Optional[float]] = mapped_column(Float, nullable=True)
