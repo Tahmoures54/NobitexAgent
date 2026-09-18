@@ -118,7 +118,7 @@ def refresh_scan(
                 ),
             )
         _guest_consume(ip)
-        count = scanner.run_scan()
+        count = scanner.run_scan(persist_snapshot=True)
         return ScanRefreshResp(
             ok=True,
             count=count,
@@ -146,7 +146,7 @@ def refresh_scan(
     if not premium:
         plans.record_scan(db, user.id)
 
-    count = scanner.run_scan()
+    count = scanner.run_scan(persist_snapshot=True)
     new_remaining = -1 if premium else max(0, remaining - 1)
 
     logger.info(
