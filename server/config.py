@@ -26,6 +26,10 @@ class Settings(BaseSettings):
         default="CHANGE_ME_IN_PRODUCTION_THIS_IS_INSECURE",
         description="JWT signing key. MUST be changed in production.",
     )
+    totp_encryption_key: str = Field(
+        default="CHANGE_ME_IN_PRODUCTION_TOTP_ENCRYPTION_KEY",
+        description="Independent Fernet key for encrypting authenticator secrets at rest.",
+    )
     algorithm: str = "HS256"
     access_token_expire_minutes: int = 60 * 24 * 7
 
@@ -59,6 +63,16 @@ class Settings(BaseSettings):
             import logging
             logging.getLogger(__name__).warning(
                 "SECRET_KEY is still the default value. Change it before production."
+            )
+        return v
+
+    @field_validator("totp_encryption_key")
+    @classmethod
+    def _warn_insecure_totp_key(cls, v: str) -> str:
+        if v.startswith("CHANGE_ME"):
+            import logging
+            logging.getLogger(__name__).warning(
+                "TOTP_ENCRYPTION_KEY is still the default value. Change it before production."
             )
         return v
 
