@@ -17,7 +17,7 @@ from server.auth import (
 )
 from server.database import get_db
 from server.models import User
-from server.schemas import LoginReq, RegisterReq, TotpSetupOut, TokenResp, UserOut, VerifyTotpReq
+from server.schemas import LoginReq, RegisterReq, TotpSetupOut, TokenResp, UserOut
 from server.security import client_ip, client_ua, limiter
 from server.services import audit
 
