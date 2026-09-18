@@ -39,33 +39,27 @@ def register(request: Request, req: RegisterReq, db: Session = Depends(get_db)) 
     email = str(req.email).strip().lower()
     user = db.query(User).filter(User.email == email).first()
 
-    if user is not None and user.totp_enabled:
-        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with this email already exists.")
+    if user is not None:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="An account with this email already exists. Contact support to re-enroll the authenticator.",
+        )
 
     secret = generate_totp_secret()
 
-    if user is None:
-        user = User(
-            email=email,
-            auth_provider="totp",
-            auth_subject=f"totp:{email}",
-            full_name=req.full_name,
-            phone_number=req.phone_number,
-            totp_secret_encrypted=encrypt_totp_secret(secret),
-            totp_enabled=False,
-            password_hash=None,
-            plan="free",
-            is_active=True,
-        )
-        db.add(user)
-    else:
-        user.auth_provider = "totp"
-        user.auth_subject = f"totp:{email}"
-        user.full_name = req.full_name
-        user.phone_number = req.phone_number
-        user.totp_secret_encrypted = encrypt_totp_secret(secret)
-        user.totp_enabled = False
-        user.password_hash = None
+    user = User(
+        email=email,
+        auth_provider="totp",
+        auth_subject=f"totp:{email}",
+        full_name=req.full_name,
+        phone_number=req.phone_number,
+        totp_secret_encrypted=encrypt_totp_secret(secret),
+        totp_enabled=False,
+        password_hash=None,
+        plan="free",
+        is_active=True,
+    )
+    db.add(user)
 
     db.commit()
     db.refresh(user)
