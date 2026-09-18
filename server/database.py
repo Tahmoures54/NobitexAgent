@@ -85,7 +85,11 @@ def get_db() -> Generator[Session, None, None]:
 
 # ── Init helpers ───────────────────────────────────────────
 def init_db() -> None:
-    """Create all tables. Safe to call on every startup."""
+    """Create tables for development/bootstrap only.
+
+    Production deployments should set AUTO_CREATE_DB=false and run Alembic
+    migrations before the application starts.
+    """
     from server import models  # noqa: F401 — register models
 
     Base.metadata.create_all(bind=engine)
