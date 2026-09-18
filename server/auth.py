@@ -1,21 +1,17 @@
 # server/auth.py
-"""
-Password hashing, JWT issuance, and auth dependencies.
-
-Uses:
-    - passlib[bcrypt]  → password hashing
-    - python-jose      → JWT (HS256)
-"""
+"""External identity authentication and application JWT dependencies."""
 from __future__ import annotations
 
 import logging
 from datetime import datetime, timedelta, timezone
 from typing import Optional
 
+import jwt as pyjwt
 from fastapi import Depends, HTTPException, status
 from fastapi.security import OAuth2PasswordBearer
-from jose import JWTError, jwt
-from passlib.context import CryptContext
+from google.auth.transport import requests as google_requests
+from google.oauth2 import id_token as google_id_token
+from jwt import PyJWKClient
 from sqlalchemy.orm import Session
 
 from server.config import settings
@@ -24,28 +20,9 @@ from server.models import User
 
 logger = logging.getLogger(__name__)
 
-# ── Password hashing ───────────────────────────────────────
-_pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto", bcrypt__rounds=12)
+oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/provider", auto_error=False)
 
-
-def hash_password(password: str) -> str:
-    """Hash a plaintext password (bcrypt, cost 12)."""
-    return _pwd_context.hash(password)
-
-
-def verify_password(plain: str, hashed: str) -> bool:
-    """Constant-time password check."""
-    try:
-        return _pwd_context.verify(plain, hashed)
-    except Exception as exc:
-        logger.warning("Password verification error: %s", exc)
-        return False
-
-
-# ── JWT ────────────────────────────────────────────────────
-# auto_error=False so we can provide our own 401 message and
-# also support optional auth (e.g. `/scan` accessible to guests).
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/token", auto_error=False)
+_microsoft_jwks = PyJWKClient(settings.microsoft_jwks_url)
 
 
 def create_access_token(user_id: int, extra: Optional[dict] = None) -> str:
@@ -57,28 +34,23 @@ def create_access_token(user_id: int, extra: Optional[dict] = None) -> str:
         "exp": int(expire.timestamp()),
     }
     if extra:
-        # Never allow optional claims to overwrite security-critical claims.
         for key, value in extra.items():
             if key not in {"sub", "iat", "exp", "nbf", "iss", "aud"}:
                 payload[key] = value
-    return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
+    return pyjwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
 def decode_token(token: str) -> Optional[int]:
-    """Return user_id if token is valid, else None."""
     try:
-        payload = jwt.decode(
+        payload = pyjwt.decode(
             token, settings.secret_key, algorithms=[settings.algorithm]
         )
         sub = payload.get("sub")
-        if sub is None:
-            return None
-        return int(sub)
-    except (JWTError, ValueError, TypeError, OverflowError):
+        return int(sub) if sub is not None else None
+    except (pyjwt.PyJWTError, ValueError, TypeError, OverflowError):
         return None
 
 
-# ── FastAPI dependencies ───────────────────────────────────
 def _unauthorized(detail: str = "Not authenticated") -> HTTPException:
     return HTTPException(
         status_code=status.HTTP_401_UNAUTHORIZED,
@@ -87,11 +59,89 @@ def _unauthorized(detail: str = "Not authenticated") -> HTTPException:
     )
 
 
+def verify_google_id_token(raw_token: str) -> dict:
+    if not settings.google_client_id:
+        raise ValueError("Google authentication is not configured.")
+    claims = google_id_token.verify_oauth2_token(
+        raw_token,
+        google_requests.Request(),
+        settings.google_client_id,
+    )
+    if claims.get("iss") not in {"accounts.google.com", "https://accounts.google.com"}:
+        raise ValueError("Invalid Google token issuer.")
+    if not claims.get("sub") or not claims.get("email"):
+        raise ValueError("Google token does not contain a usable identity.")
+    if claims.get("email_verified") is not True:
+        raise ValueError("Google email is not verified.")
+    return claims
+
+
+def verify_microsoft_id_token(raw_token: str) -> dict:
+    if not settings.microsoft_client_id:
+        raise ValueError("Microsoft authentication is not configured.")
+
+    try:
+        unverified = pyjwt.decode(raw_token, options={"verify_signature": False})
+        issuer = str(unverified.get("iss") or "")
+        tenant_id = str(unverified.get("tid") or "")
+        if not tenant_id or not issuer.startswith("https://login.microsoftonline.com/"):
+            raise ValueError("Invalid Microsoft token issuer.")
+        expected_issuer = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
+        if issuer.rstrip("/") != expected_issuer:
+            raise ValueError("Invalid Microsoft token issuer.")
+
+        signing_key = _microsoft_jwks.get_signing_key_from_jwt(raw_token)
+        claims = pyjwt.decode(
+            raw_token,
+            signing_key.key,
+            algorithms=["RS256"],
+            audience=settings.microsoft_client_id,
+            issuer=expected_issuer,
+            options={"require": ["exp", "iat", "sub", "tid", "aud", "iss"]},
+        )
+    except (pyjwt.PyJWTError, ValueError, TypeError) as exc:
+        raise ValueError("Invalid Microsoft identity token.") from exc
+
+    subject = claims.get("oid") or claims.get("sub")
+    if not subject:
+        raise ValueError("Microsoft token does not contain a stable subject.")
+
+    email = claims.get("email") or claims.get("preferred_username")
+    if not email or "@" not in str(email):
+        raise ValueError("Microsoft account did not provide an email address.")
+
+    return {
+        **claims,
+        "sub": str(subject),
+        "email": str(email).strip().lower(),
+    }
+
+
+def verify_external_token(provider: str, raw_token: str) -> dict:
+    provider = provider.strip().lower()
+    if provider == "google":
+        claims = verify_google_id_token(raw_token)
+        return {
+            "provider": "google",
+            "subject": str(claims["sub"]),
+            "email": str(claims["email"]).strip().lower(),
+            "name": claims.get("name"),
+        }
+    if provider == "microsoft":
+        claims = verify_microsoft_id_token(raw_token)
+        return {
+            "provider": "microsoft",
+            "subject": str(claims["sub"]),
+            "email": str(claims["email"]).strip().lower(),
+            "name": claims.get("name"),
+        }
+    raise ValueError("Unsupported authentication provider.")
+
+
 def get_current_user(
     token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-    """Require a valid token. Raises 401 otherwise."""
     if not token:
         raise _unauthorized()
     uid = decode_token(token)
@@ -109,7 +159,6 @@ def get_optional_user(
     token: Optional[str] = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> Optional[User]:
-    """Return the user if the token is valid, otherwise None. Never raises."""
     if not token:
         return None
     uid = decode_token(token)
@@ -122,10 +171,11 @@ def get_optional_user(
 
 
 __all__ = [
-    "hash_password",
-    "verify_password",
     "create_access_token",
     "decode_token",
+    "verify_external_token",
+    "verify_google_id_token",
+    "verify_microsoft_id_token",
     "get_current_user",
     "get_optional_user",
     "oauth2_scheme",
