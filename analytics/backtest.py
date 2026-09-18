@@ -91,7 +91,7 @@ class BacktestReport:
 
 def _signal(row: Mapping[str, Any], cfg: BacktestConfig) -> bool:
     global_move = _f(row.get("Global1hPct") or row.get("global_1h_pct") or row.get("global_move_pct"))
-    observed = _f(row.get("ObservedGlobalPct") or row.get("observed_global_pct"), global_move)
+    observed = _f(row.get("ObservedGlobalPct") or row.get("ObservedGlobalMove (%)") or row.get("observed_global_pct") or row.get("observed_global_move_pct"), global_move)
     spread = _f(row.get("SpreadPct") or row.get("spread_pct"))
     chase = _f(row.get("ChasePct") or row.get("chase_pct"))
     return (
@@ -135,12 +135,18 @@ def run_backtest(rows: Iterable[Mapping[str, Any]], config: Optional[BacktestCon
             i += 1
             continue
 
-        entry_i = min(i + max(0, int(cfg.entry_delay_scans)), len(data) - 1)
+        entry_i = i
+        remaining_delay = max(0, int(cfg.entry_delay_scans))
+        while remaining_delay > 0:
+            entry_i += 1
+            while entry_i < len(data) and _symbol(data[entry_i]) != symbol:
+                entry_i += 1
+            if entry_i >= len(data):
+                break
+            remaining_delay -= 1
+        if entry_i >= len(data):
+            break
         entry_row = data[entry_i]
-        if _symbol(entry_row) != symbol:
-            # Entry delay landed on another symbol. Skip rather than inventing a price.
-            i += 1
-            continue
         entry_raw = _price(entry_row)
         if entry_raw <= 0:
             i += 1
