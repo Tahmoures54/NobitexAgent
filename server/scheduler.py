@@ -34,7 +34,7 @@ _lock = threading.Lock()
 def _scan_job() -> None:
     try:
         from server.services import scanner
-        n = scanner.run_scan()
+        n = scanner.run_scan(persist_snapshot=True)
         logger.debug("Scheduled scan finished | rows=%d", n)
     except Exception as exc:
         logger.exception("Scan job failed: %s", exc)
