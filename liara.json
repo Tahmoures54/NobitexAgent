@@ -1,0 +1,14 @@
+{
+  "platform": "docker",
+  "app": "nobitex-agent",
+  "port": 8000,
+  "build": {
+    "dockerfile": "Dockerfile"
+  },
+  "disks": [
+    {
+      "name": "nobitex-agent-db",
+      "mountTo": "/app/db"
+    }
+  ]
+}
