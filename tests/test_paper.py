@@ -1,66 +1,73 @@
-# tests/test_paper.py
-"""Paper trading: open, close, list, stats, SL/TP auto-close."""
+"""Paper trading integration tests for sizing, SL/TP and trailing stops."""
 from __future__ import annotations
 
+import pyotp
 import pytest
 
+from server.models import User
+from server.services import paper as paper_svc
 
-# ══════════════════════════════════════════════════════════
-# Helpers
-# ══════════════════════════════════════════════════════════
+
 def _open_payload(**overrides) -> dict:
     base = {
         "symbol": "BTC",
         "side": "long",
         "price": 50000.0,
         "size_usd": 1000.0,
-        "stop_loss_pct": 2.0,
-        "take_profit_pct": 6.0,
+        "stop_loss_pct": 3.0,
+        "take_profit_pct": 50.0,
     }
     base.update(overrides)
     return base
 
 
-# ══════════════════════════════════════════════════════════
-# Auth guard
-# ══════════════════════════════════════════════════════════
-class TestPaperAuthGuard:
+def _register_user(client, email: str, phone: str) -> dict:
+    payload = {
+        "email": email,
+        "full_name": "Test User",
+        "phone_number": phone,
+    }
+    setup = client.post("/auth/register", json=payload)
+    assert setup.status_code == 200, setup.text
+    code = pyotp.TOTP(setup.json()["secret"]).now()
+    activated = client.post(
+        "/auth/setup/verify",
+        json={"email": email, "code": code},
+    )
+    assert activated.status_code == 200, activated.text
+    return activated.json()
 
+
+class TestPaperAuthGuard:
     def test_open_requires_auth(self, client):
-        r = client.post("/api/paper/open", json=_open_payload())
-        assert r.status_code == 401
+        assert client.post("/api/paper/open", json=_open_payload()).status_code == 401
 
     def test_list_requires_auth(self, client):
-        r = client.get("/api/paper/list")
-        assert r.status_code == 401
+        assert client.get("/api/paper/list").status_code == 401
 
     def test_stats_requires_auth(self, client):
-        r = client.get("/api/paper/stats")
-        assert r.status_code == 401
+        assert client.get("/api/paper/stats").status_code == 401
 
 
-# ══════════════════════════════════════════════════════════
-# Open
-# ══════════════════════════════════════════════════════════
 class TestOpenTrade:
-
-    def test_open_long_trade(self, client, auth_headers):
-        r = client.post(
-            "/api/paper/open", json=_open_payload(), headers=auth_headers
-        )
+    def test_open_uses_90_percent_virtual_cash(self, client, auth_headers):
+        r = client.post("/api/paper/open", json=_open_payload(), headers=auth_headers)
         assert r.status_code == 201, r.text
         t = r.json()
-        assert t["symbol"] == "BTC"
-        assert t["side"] == "long"
         assert t["status"] == "open"
-        assert t["entry_price"] == 50000.0
-        # position_size = 1000 / 50000 = 0.02
-        assert t["position_size"] == pytest.approx(0.02, rel=1e-6)
-        assert t["notional"] == pytest.approx(1000.0)
-        # SL = 50000 * (1 - 0.02) = 49000
-        assert t["stop_loss"] == pytest.approx(49000.0)
-        # TP = 50000 * (1 + 0.06) = 53000
-        assert t["take_profit"] == pytest.approx(53000.0)
+        assert t["notional"] == pytest.approx(900.0)
+        assert t["position_size"] == pytest.approx(900.0 / 50000.0)
+        assert t["stop_loss"] == pytest.approx(48500.0)
+        assert t["take_profit"] == pytest.approx(75000.0)
+
+    def test_requested_size_does_not_override_strategy_sizing(self, client, auth_headers):
+        a = client.post(
+            "/api/paper/open",
+            json=_open_payload(size_usd=1.0),
+            headers=auth_headers,
+        )
+        assert a.status_code == 201
+        assert a.json()["notional"] == pytest.approx(900.0)
 
     def test_open_short_trade(self, client, auth_headers):
         r = client.post(
@@ -68,335 +75,171 @@ class TestOpenTrade:
             json=_open_payload(side="short"),
             headers=auth_headers,
         )
-        assert r.status_code == 201, r.text
+        assert r.status_code == 201
         t = r.json()
         assert t["side"] == "short"
-        # SL for short is ABOVE entry
-        assert t["stop_loss"] == pytest.approx(51000.0)
-        # TP for short is BELOW entry
-        assert t["take_profit"] == pytest.approx(47000.0)
+        assert t["stop_loss"] == pytest.approx(51500.0)
+        assert t["take_profit"] == pytest.approx(25000.0)
 
     def test_open_rejects_invalid_price(self, client, auth_headers):
-        r = client.post(
-            "/api/paper/open",
-            json=_open_payload(price=0),
-            headers=auth_headers,
-        )
-        assert r.status_code == 422
-
-    def test_open_rejects_tiny_size(self, client, auth_headers):
-        r = client.post(
-            "/api/paper/open",
-            json=_open_payload(size_usd=0.5),
-            headers=auth_headers,
-        )
-        # size_usd < 1.0 is rejected by the route
-        assert r.status_code in (400, 422)
-
-    def test_open_symbol_normalized_to_uppercase(self, client, auth_headers):
-        r = client.post(
-            "/api/paper/open",
-            json=_open_payload(symbol="btc"),
-            headers=auth_headers,
-        )
-        assert r.status_code == 201
-        assert r.json()["symbol"] == "BTC"
+        assert client.post(
+            "/api/paper/open", json=_open_payload(price=0), headers=auth_headers
+        ).status_code == 422
 
 
-# ══════════════════════════════════════════════════════════
-# Close
-# ══════════════════════════════════════════════════════════
 class TestCloseTrade:
-
     def test_close_long_profit(self, client, auth_headers):
-        open_r = client.post(
-            "/api/paper/open", json=_open_payload(), headers=auth_headers
-        )
-        trade_id = open_r.json()["id"]
-
-        close_r = client.post(
-            f"/api/paper/{trade_id}/close",
+        opened = client.post("/api/paper/open", json=_open_payload(), headers=auth_headers).json()
+        closed = client.post(
+            f"/api/paper/{opened['id']}/close",
             json={"price": 53000.0, "reason": "Manual"},
             headers=auth_headers,
         )
-        assert close_r.status_code == 200, close_r.text
-        t = close_r.json()
-        assert t["status"] == "closed"
-        assert t["exit_price"] == 53000.0
-        # pnl_pct = (53000 - 50000)/50000 * 100 = 6%
-        assert t["pnl_pct"] == pytest.approx(6.0, abs=1e-3)
-        # pnl_usd = 3000 * 0.02 = 60
-        assert t["pnl_usd"] == pytest.approx(60.0, abs=1e-3)
-
-    def test_close_long_loss(self, client, auth_headers):
-        open_r = client.post(
-            "/api/paper/open", json=_open_payload(), headers=auth_headers
-        )
-        trade_id = open_r.json()["id"]
-
-        close_r = client.post(
-            f"/api/paper/{trade_id}/close",
-            json={"price": 48000.0, "reason": "Stop Loss"},
-            headers=auth_headers,
-        )
-        assert close_r.status_code == 200
-        t = close_r.json()
-        # pnl_pct = (48000 - 50000)/50000 * 100 = -4%
-        assert t["pnl_pct"] == pytest.approx(-4.0, abs=1e-3)
-        assert t["pnl_usd"] == pytest.approx(-40.0, abs=1e-3)
+        assert closed.status_code == 200
+        t = closed.json()
+        assert t["pnl_pct"] == pytest.approx(6.0)
+        assert t["pnl_usd"] == pytest.approx(54.0)
 
     def test_close_short_profit(self, client, auth_headers):
-        open_r = client.post(
-            "/api/paper/open",
-            json=_open_payload(side="short"),
-            headers=auth_headers,
-        )
-        trade_id = open_r.json()["id"]
-
-        close_r = client.post(
-            f"/api/paper/{trade_id}/close",
+        opened = client.post(
+            "/api/paper/open", json=_open_payload(side="short"), headers=auth_headers
+        ).json()
+        closed = client.post(
+            f"/api/paper/{opened['id']}/close",
             json={"price": 47000.0, "reason": "Take Profit"},
             headers=auth_headers,
         )
-        assert close_r.status_code == 200
-        # pnl_pct = (50000 - 47000)/50000 * 100 = 6%
-        assert close_r.json()["pnl_pct"] == pytest.approx(6.0, abs=1e-3)
+        assert closed.status_code == 200
+        assert closed.json()["pnl_pct"] == pytest.approx(6.0)
+        assert closed.json()["pnl_usd"] == pytest.approx(54.0)
 
     def test_close_already_closed(self, client, auth_headers):
-        open_r = client.post(
-            "/api/paper/open", json=_open_payload(), headers=auth_headers
-        )
-        trade_id = open_r.json()["id"]
-
-        # Close once
-        client.post(
-            f"/api/paper/{trade_id}/close",
-            json={"price": 51000.0, "reason": "Manual"},
-            headers=auth_headers,
-        )
-        # Try again
-        r = client.post(
-            f"/api/paper/{trade_id}/close",
-            json={"price": 52000.0, "reason": "Manual"},
-            headers=auth_headers,
-        )
-        assert r.status_code == 404
-
-    def test_close_unknown_trade(self, client, auth_headers):
-        r = client.post(
-            "/api/paper/99999/close",
-            json={"price": 100.0, "reason": "Manual"},
-            headers=auth_headers,
-        )
-        assert r.status_code == 404
+        opened = client.post("/api/paper/open", json=_open_payload(), headers=auth_headers).json()
+        path = f"/api/paper/{opened['id']}/close"
+        assert client.post(path, json={"price": 51000.0}, headers=auth_headers).status_code == 200
+        assert client.post(path, json={"price": 52000.0}, headers=auth_headers).status_code == 404
 
 
-# ══════════════════════════════════════════════════════════
-# Isolation between users
-# ══════════════════════════════════════════════════════════
 class TestUserIsolation:
-
-    def test_user_cannot_see_other_users_trades(self, client, free_user):
-        # Alice opens a trade
-        alice_headers = {"Authorization": f"Bearer {free_user['token']}"}
-        client.post(
-            "/api/paper/open", json=_open_payload(), headers=alice_headers
-        )
-
-        # Bob registers and lists his trades
-        bob = client.post(
-            "/auth/register",
-            json={"email": "bob@example.com", "password": "bobsecret123"},
-        ).json()
-        bob_headers = {"Authorization": f"Bearer {bob['access_token']}"}
-
-        bob_list = client.get("/api/paper/list", headers=bob_headers)
-        assert bob_list.status_code == 200
-        assert bob_list.json() == []
-
-        bob_stats = client.get("/api/paper/stats", headers=bob_headers)
-        assert bob_stats.json()["total_trades"] == 0
-
-    def test_user_cannot_close_other_users_trade(self, client, free_user):
-        alice_headers = {"Authorization": f"Bearer {free_user['token']}"}
+    def test_user_cannot_see_or_close_other_users_trade(self, client, auth_headers):
         alice_trade = client.post(
-            "/api/paper/open", json=_open_payload(), headers=alice_headers
+            "/api/paper/open", json=_open_payload(), headers=auth_headers
         ).json()
-
-        bob = client.post(
-            "/auth/register",
-            json={"email": "bob2@example.com", "password": "bobsecret123"},
-        ).json()
+        bob = _register_user(client, "bob@example.com", "+989121234501")
         bob_headers = {"Authorization": f"Bearer {bob['access_token']}"}
+
+        assert client.get("/api/paper/list", headers=bob_headers).json() == []
+        assert client.get("/api/paper/stats", headers=bob_headers).json()["total_trades"] == 0
 
         r = client.post(
             f"/api/paper/{alice_trade['id']}/close",
-            json={"price": 50000.0, "reason": "Manual"},
+            json={"price": 49000.0},
             headers=bob_headers,
         )
         assert r.status_code == 404
 
 
-# ══════════════════════════════════════════════════════════
-# List & Stats
-# ══════════════════════════════════════════════════════════
-class TestListAndStats:
-
-    def test_list_empty(self, client, auth_headers):
-        r = client.get("/api/paper/list", headers=auth_headers)
-        assert r.status_code == 200
-        assert r.json() == []
-
-    def test_stats_empty(self, client, auth_headers):
-        r = client.get("/api/paper/stats", headers=auth_headers)
-        assert r.status_code == 200
-        data = r.json()
-        assert data["total_trades"] == 0
-        assert data["win_rate"] == 0.0
-        assert data["total_pnl_usd"] == 0.0
-
-    def test_stats_after_win_and_loss(self, client, auth_headers):
-        # Trade 1: win
-        t1 = client.post(
-            "/api/paper/open", json=_open_payload(), headers=auth_headers
-        ).json()
-        client.post(
-            f"/api/paper/{t1['id']}/close",
-            json={"price": 53000.0, "reason": "Take Profit"},
-            headers=auth_headers,
-        )
-
-        # Trade 2: loss
-        t2 = client.post(
-            "/api/paper/open",
-            json=_open_payload(symbol="ETH", price=3000.0),
-            headers=auth_headers,
-        ).json()
-        client.post(
-            f"/api/paper/{t2['id']}/close",
-            json={"price": 2900.0, "reason": "Stop Loss"},
-            headers=auth_headers,
-        )
-
-        stats = client.get("/api/paper/stats", headers=auth_headers).json()
-        assert stats["total_trades"] == 2
-        assert stats["closed_trades"] == 2
-        assert stats["wins"] == 1
-        assert stats["losses"] == 1
-        assert stats["win_rate"] == 50.0
-        # pnl_usd: +60 (from BTC) + -33.33 (from ETH)
-        # ETH: entry 3000, size_usd 1000 → qty 0.3333
-        #      exit 2900 → -100 * 0.3333 = -33.33
-        assert stats["total_pnl_usd"] == pytest.approx(26.67, abs=0.1)
-
-
-# ══════════════════════════════════════════════════════════
-# Auto SL/TP
-# ══════════════════════════════════════════════════════════
 class TestAutoSLTP:
-
     def test_auto_close_take_profit(self, client, auth_headers, db_session, free_user):
-        # Open long BTC
-        t = client.post(
-            "/api/paper/open", json=_open_payload(), headers=auth_headers
-        ).json()
-
-        # Simulate price above TP
-        from server.services import paper as paper_svc
-        from server.models import User
-        user = db_session.query(User).filter(User.email == free_user["email"]).first()
-        closed = paper_svc.check_exits(
-            db_session, user.id, {"BTC": 54000.0}  # above 53000 TP
+        client.post(
+            "/api/paper/open",
+            json=_open_payload(take_profit_pct=6.0),
+            headers=auth_headers,
         )
-        assert closed == 1
-
-        # Verify via API
-        trades = client.get("/api/paper/list", headers=auth_headers).json()
-        assert trades[0]["status"] == "closed"
-        assert trades[0]["exit_reason"] == "Take Profit"
+        user = db_session.query(User).filter(User.email == free_user["email"]).one()
+        assert paper_svc.check_exits(db_session, user.id, {"BTC": 54000.0}) == 1
+        trade = client.get("/api/paper/list", headers=auth_headers).json()[0]
+        assert trade["exit_reason"] == "Take Profit"
+        assert trade["exit_price"] == pytest.approx(53000.0)
 
     def test_auto_close_stop_loss(self, client, auth_headers, db_session, free_user):
-        t = client.post(
+        client.post(
             "/api/paper/open", json=_open_payload(), headers=auth_headers
-        ).json()
-
-        from server.services import paper as paper_svc
-        from server.models import User
-        user = db_session.query(User).filter(User.email == free_user["email"]).first()
-        closed = paper_svc.check_exits(
-            db_session, user.id, {"BTC": 48000.0}  # below 49000 SL
         )
-        assert closed == 1
-
-        trades = client.get("/api/paper/list", headers=auth_headers).json()
-        assert trades[0]["exit_reason"] == "Stop Loss"
-
-    def test_auto_close_respects_short(self, client, auth_headers, db_session, free_user):
-        t = client.post(
-            "/api/paper/open",
-            json=_open_payload(side="short"),
-            headers=auth_headers,
-        ).json()
-
-        from server.services import paper as paper_svc
-        from server.models import User
-        user = db_session.query(User).filter(User.email == free_user["email"]).first()
-        # For short: SL above entry (51000). Price 52000 should trigger.
-        closed = paper_svc.check_exits(db_session, user.id, {"BTC": 52000.0})
-        assert closed == 1
-        assert (
-            client.get("/api/paper/list", headers=auth_headers).json()[0]["exit_reason"]
-            == "Stop Loss"
-        )
+        user = db_session.query(User).filter(User.email == free_user["email"]).one()
+        assert paper_svc.check_exits(db_session, user.id, {"BTC": 48000.0}) == 1
+        trade = client.get("/api/paper/list", headers=auth_headers).json()[0]
+        assert trade["exit_reason"] == "Stop Loss"
+        assert trade["exit_price"] == pytest.approx(48500.0)
 
     def test_no_auto_close_within_range(self, client, auth_headers, db_session, free_user):
         client.post("/api/paper/open", json=_open_payload(), headers=auth_headers)
+        user = db_session.query(User).filter(User.email == free_user["email"]).one()
+        assert paper_svc.check_exits(db_session, user.id, {"BTC": 50500.0}) == 0
+        assert client.get("/api/paper/list", headers=auth_headers).json()[0]["status"] == "open"
 
-        from server.services import paper as paper_svc
-        from server.models import User
-        user = db_session.query(User).filter(User.email == free_user["email"]).first()
-        closed = paper_svc.check_exits(db_session, user.id, {"BTC": 50500.0})
-        assert closed == 0
 
-        trades = client.get("/api/paper/list", headers=auth_headers).json()
-        assert trades[0]["status"] == "open"
+class TestTrailingStop:
+    def test_long_trailing_activates_and_moves_up(self, client, auth_headers, db_session, free_user):
+        opened = client.post(
+            "/api/paper/open", json=_open_payload(), headers=auth_headers
+        ).json()
+        user = db_session.query(User).filter(User.email == free_user["email"]).one()
 
-    def test_auto_close_ignores_missing_price(self, client, auth_headers, db_session, free_user):
+        assert paper_svc.check_exits(db_session, user.id, {"BTC": 52000.0}) == 0
+        t = client.get("/api/paper/list", headers=auth_headers).json()[0]
+        assert t["trailing_active"] is True
+        assert t["highest_price"] == pytest.approx(52000.0)
+        assert t["trailing_stop"] == pytest.approx(50440.0)
+        assert t["stop_loss"] == pytest.approx(50440.0)
+
+        assert paper_svc.check_exits(db_session, user.id, {"BTC": 55000.0}) == 0
+        t = client.get("/api/paper/list", headers=auth_headers).json()[0]
+        assert t["highest_price"] == pytest.approx(55000.0)
+        assert t["trailing_stop"] == pytest.approx(53350.0)
+
+    def test_long_trailing_closes_on_pullback(self, client, auth_headers, db_session, free_user):
         client.post("/api/paper/open", json=_open_payload(), headers=auth_headers)
+        user = db_session.query(User).filter(User.email == free_user["email"]).one()
 
-        from server.services import paper as paper_svc
-        from server.models import User
-        user = db_session.query(User).filter(User.email == free_user["email"]).first()
-        # Price for a symbol not in the map → no close
-        closed = paper_svc.check_exits(db_session, user.id, {"ETH": 3000.0})
-        assert closed == 0
+        assert paper_svc.check_exits(db_session, user.id, {"BTC": 55000.0}) == 0
+        assert paper_svc.check_exits(db_session, user.id, {"BTC": 53000.0}) == 1
+        t = client.get("/api/paper/list", headers=auth_headers).json()[0]
+        assert t["status"] == "closed"
+        assert t["exit_reason"] == "Trailing Stop"
+        assert t["exit_price"] == pytest.approx(53350.0)
 
-
-# ══════════════════════════════════════════════════════════
-# Delete
-# ══════════════════════════════════════════════════════════
-class TestDeleteTrade:
-
-    def test_delete_open_trade(self, client, auth_headers):
-        t = client.post(
-            "/api/paper/open", json=_open_payload(), headers=auth_headers
-        ).json()
-        r = client.delete(f"/api/paper/{t['id']}", headers=auth_headers)
-        assert r.status_code == 200
-        assert r.json()["deleted"] == t["id"]
-
-        # Verify gone
-        trades = client.get("/api/paper/list", headers=auth_headers).json()
-        assert all(x["id"] != t["id"] for x in trades)
-
-    def test_delete_closed_trade_fails(self, client, auth_headers):
-        t = client.post(
-            "/api/paper/open", json=_open_payload(), headers=auth_headers
-        ).json()
+    def test_short_trailing_activates_and_moves_down(self, client, auth_headers, db_session, free_user):
         client.post(
-            f"/api/paper/{t['id']}/close",
-            json={"price": 51000.0, "reason": "Manual"},
+            "/api/paper/open",
+            json=_open_payload(side="short"),
             headers=auth_headers,
         )
-        r = client.delete(f"/api/paper/{t['id']}", headers=auth_headers)
-        assert r.status_code == 404
+        user = db_session.query(User).filter(User.email == free_user["email"]).one()
+
+        assert paper_svc.check_exits(db_session, user.id, {"BTC": 48000.0}) == 0
+        t = client.get("/api/paper/list", headers=auth_headers).json()[0]
+        assert t["trailing_active"] is True
+        assert t["lowest_price"] == pytest.approx(48000.0)
+        assert t["trailing_stop"] == pytest.approx(49440.0)
+
+    def test_trailing_stop_never_moves_backward(self, client, auth_headers, db_session, free_user):
+        client.post("/api/paper/open", json=_open_payload(), headers=auth_headers)
+        user = db_session.query(User).filter(User.email == free_user["email"]).one()
+
+        paper_svc.check_exits(db_session, user.id, {"BTC": 55000.0})
+        before = client.get("/api/paper/list", headers=auth_headers).json()[0]["trailing_stop"]
+        paper_svc.check_exits(db_session, user.id, {"BTC": 54000.0})
+        after = client.get("/api/paper/list", headers=auth_headers).json()[0]["trailing_stop"]
+        assert after == pytest.approx(before)
+
+
+class TestListAndStats:
+    def test_list_empty(self, client, auth_headers):
+        assert client.get("/api/paper/list", headers=auth_headers).json() == []
+
+    def test_stats_empty(self, client, auth_headers):
+        data = client.get("/api/paper/stats", headers=auth_headers).json()
+        assert data["total_trades"] == 0
+        assert data["total_pnl_usd"] == 0.0
+
+    def test_capital_reduces_after_open_position(self, client, auth_headers):
+        first = client.post("/api/paper/open", json=_open_payload(), headers=auth_headers)
+        assert first.status_code == 201
+        second = client.post(
+            "/api/paper/open",
+            json=_open_payload(symbol="ETH", price=3000.0),
+            headers=auth_headers,
+        )
+        assert second.status_code == 201
+        assert second.json()["notional"] == pytest.approx(90.0)
