@@ -3,7 +3,7 @@ services:
     name: nobitexagent
     runtime: docker
     plan: free
-    healthCheckPath: /health
+    healthCheckPath: /health/db
     autoDeploy: true
     dockerCommand: sh -c "alembic upgrade head && uvicorn server.main:app --host 0.0.0.0 --port ${PORT:-8000} --workers 1"
     envVars:
