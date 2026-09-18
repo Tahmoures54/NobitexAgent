@@ -135,7 +135,7 @@ def _enrich(df):
                     "Risk_Level":"High" if condition in {"STRONG_PUMP","PUMP"} and float(row.get("5m Change (%)") or 0)>=5 else "Medium",
                     "Reasons":"; ".join(reasons) if reasons else "No strong momentum confirmation"})
         if symbol in global_map: row.update(global_map[symbol])
-        row["SnapshotTimestamp"]=time.time()
+        \n        if price > 0 and float(row.get("Bid") or 0) > 0:\n            row["SpreadPct"]=(float(row.get("Ask") or price)-float(row.get("Bid") or price))/float(row.get("Bid") or price)*100.0\n        else:\n            row["SpreadPct"]=0.0\n        row["ChasePct"]=max(0.0,(float(row.get("Ask") or price)-price)/price*100.0) if price>0 else 0.0\n        row["SnapshotTimestamp"]=time.time()
         enriched.append(row)
     return pd.DataFrame(enriched)
 
