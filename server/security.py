@@ -21,8 +21,8 @@ from server.models import User
 # ── Rate limiter ───────────────────────────────────────────
 limiter = Limiter(
     key_func=get_remote_address,
-    default_limits=[],           # per-route only
-    storage_uri="memory://",     # single-worker MVP; switch to Redis later
+    default_limits=[],
+    storage_uri=settings.redis_url or "memory://",
 )
 
 
