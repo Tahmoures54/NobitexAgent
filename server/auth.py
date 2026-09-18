@@ -8,7 +8,7 @@ from typing import Optional
 
 import jwt as pyjwt
 from fastapi import Depends, HTTPException, status
-from fastapi.security import OAuth2PasswordBearer
+from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
 from google.auth.transport import requests as google_requests
 from google.oauth2 import id_token as google_id_token
 from jwt import PyJWKClient
@@ -20,7 +20,7 @@ from server.models import User
 
 logger = logging.getLogger(__name__)
 
-oauth2_scheme = OAuth2PasswordBearer(tokenUrl="/auth/provider", auto_error=False)
+oauth2_scheme = HTTPBearer(auto_error=False)
 
 _microsoft_jwks = PyJWKClient(settings.microsoft_jwks_url)
 
@@ -139,12 +139,12 @@ def verify_external_token(provider: str, raw_token: str) -> dict:
 
 
 def get_current_user(
-    token: Optional[str] = Depends(oauth2_scheme),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> User:
-    if not token:
+    if not credentials or credentials.scheme.lower() != "bearer":
         raise _unauthorized()
-    uid = decode_token(token)
+    uid = decode_token(credentials.credentials)
     if uid is None:
         raise _unauthorized("Invalid or expired token")
     user = db.get(User, uid)
@@ -156,12 +156,12 @@ def get_current_user(
 
 
 def get_optional_user(
-    token: Optional[str] = Depends(oauth2_scheme),
+    credentials: Optional[HTTPAuthorizationCredentials] = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
 ) -> Optional[User]:
-    if not token:
+    if not credentials or credentials.scheme.lower() != "bearer":
         return None
-    uid = decode_token(token)
+    uid = decode_token(credentials.credentials)
     if uid is None:
         return None
     user = db.get(User, uid)
