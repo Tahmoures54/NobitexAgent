@@ -1,2 +1,36 @@
+[project]
+name = "nobitexagent"
+version = "7.0.0"
+description = "FastAPI crypto scanner and Nobitex trading application"
+requires-python = ">=3.12,<3.14"
+dependencies = [
+  "pandas>=2.2.3,<3.0.0",
+  "numpy>=1.26.4,<3.0.0",
+  "python-dateutil>=2.8.0",
+  "pytz>=2022.1",
+  "requests>=2.28.0",
+  "urllib3>=1.26.0",
+  "httpx>=0.27.0",
+  "ccxt>=4.0.0,<5.0.0",
+  "fastapi>=0.111.0",
+  "uvicorn[standard]>=0.30.0",
+  "python-multipart>=0.0.9",
+  "pydantic>=2.7.0",
+  "pydantic-settings>=2.3.0",
+  "email-validator>=2.0.0",
+  "sqlalchemy>=2.0.0",
+  "alembic>=1.13.0",
+  "psycopg[binary]>=3.2.0,<4.0.0",
+  "PyJWT[crypto]>=2.9.0",
+  "pyotp>=2.9.0",
+  "qrcode[pil]>=7.4.2",
+  "apscheduler>=3.10.4",
+  "slowapi>=0.1.9",
+  "redis>=5.0.0,<8.0.0",
+  "pytest>=8.0.0",
+  "pytest-cov>=5.0.0",
+  "gunicorn>=22.0.0; sys_platform != 'win32'",
+]
+
 [tool.vercel]
 entrypoint = "server.main:app"
