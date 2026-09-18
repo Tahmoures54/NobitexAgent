@@ -8,12 +8,8 @@ from typing import Any, Literal, Optional
 from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 
-class ProviderTokenReq(BaseModel):
-    provider: Literal["google", "microsoft"]
-    id_token: str = Field(min_length=20, max_length=20000)
-
-
-class ProfileUpdateReq(BaseModel):
+class RegisterReq(BaseModel):
+    email: EmailStr
     full_name: str = Field(min_length=2, max_length=120)
     phone_number: str = Field(min_length=7, max_length=32)
 
@@ -30,6 +26,20 @@ class ProfileUpdateReq(BaseModel):
             raise ValueError("Phone number must use international format, for example +989121234567.")
         return value
 
+
+class LoginReq(BaseModel):
+    email: EmailStr
+    code: str = Field(min_length=6, max_length=6, pattern="^[0-9]{6}$")
+
+
+class VerifyTotpReq(BaseModel):
+    code: str = Field(min_length=6, max_length=6, pattern="^[0-9]{6}$")
+
+
+class TotpSetupOut(BaseModel):
+    secret: str
+    otpauth_uri: str
+    qr_code_data_uri: str
 
 class UserOut(BaseModel):
     model_config = ConfigDict(from_attributes=True)
@@ -157,7 +167,7 @@ class ErrorResp(BaseModel):
 
 
 __all__ = [
-    "ProviderTokenReq", "ProfileUpdateReq", "UserOut", "TokenResp", "AuthConfigOut",
+    "RegisterReq", "LoginReq", "VerifyTotpReq", "TotpSetupOut", "ProfileUpdateReq", "UserOut", "TokenResp", "AuthConfigOut",
     "ScanResponse", "ScanRefreshResp", "OpenTradeReq", "CloseTradeReq", "TradeOut",
     "PaperStatsOut", "AdminStatsOut", "HealthOut", "ErrorResp",
 ]
