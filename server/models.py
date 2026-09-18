@@ -27,9 +27,12 @@ class User(Base):
     # Legacy password storage is nullable because password authentication is retired.
     password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
 
-    # External identity is the only supported authentication mechanism.
-    auth_provider: Mapped[str] = mapped_column(String(32), nullable=False, default="google")
+    # Passwordless application authentication uses an authenticator-app TOTP secret.
+    # The secret is encrypted at rest; the plaintext secret is never stored.
+    auth_provider: Mapped[str] = mapped_column(String(32), nullable=False, default="totp")
     auth_subject: Mapped[str] = mapped_column(String(255), nullable=False)
+    totp_secret_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
+    totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     full_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
     phone_number: Mapped[Optional[str]] = mapped_column(String(32), nullable=True)
 
@@ -54,7 +57,7 @@ class User(Base):
     )
 
     def __repr__(self) -> str:
-        return f"<User id={self.id} email={self.email!r} provider={self.auth_provider}>"
+        return f"<User id={self.id} email={self.email!r} auth=totp>"
 
 
 class Trade(Base):
