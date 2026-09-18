@@ -39,9 +39,8 @@ alembic>=1.13.0
 psycopg[binary]>=3.2.0,<4.0.0
 
 # ── Auth / crypto ───────────────────────────────────────────
-passlib[bcrypt]>=1.7.4
-python-jose[cryptography]>=3.3.0
-cryptography>=38.0.0
+PyJWT[crypto]>=2.9.0
+google-auth>=2.35.0
 
 # ── Background jobs ─────────────────────────────────────────
 apscheduler>=3.10.4
