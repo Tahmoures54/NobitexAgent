@@ -48,6 +48,10 @@ class Settings(BaseSettings):
 
     # ── Prices watcher (Paper SL/TP auto-close) ────────────
     prices_interval_seconds: int = 60
+    paper_initial_cash: float = 1000.0
+    paper_capital_usage_pct: float = 90.0
+    trailing_activation_pct: float = 3.0
+    trailing_distance_pct: float = 3.0
     # The web service must not own background jobs. Enable this only in the
     # dedicated worker process (for example RUN_SCHEDULER=true on Render).
     run_scheduler: bool = False
