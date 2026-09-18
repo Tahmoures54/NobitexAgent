@@ -1,22 +1,26 @@
 # server/routes/auth.py
-"""Authentication routes using Google Identity Services and Microsoft identity only."""
+"""Passwordless authenticator-app registration and login routes."""
 from __future__ import annotations
 
-import logging
 from datetime import datetime, timezone
 
 from fastapi import APIRouter, Depends, HTTPException, Request, status
 from sqlalchemy.orm import Session
 
-from server.auth import create_access_token, get_current_user, verify_external_token
-from server.config import settings
+from server.auth import (
+    build_totp_setup,
+    create_access_token,
+    encrypt_totp_secret,
+    generate_totp_secret,
+    get_current_user,
+    verify_totp,
+)
 from server.database import get_db
 from server.models import User
-from server.schemas import AuthConfigOut, ProfileUpdateReq, ProviderTokenReq, TokenResp, UserOut
+from server.schemas import LoginReq, RegisterReq, TotpSetupOut, TokenResp, UserOut, VerifyTotpReq
 from server.security import client_ip, client_ua, limiter
 from server.services import audit
 
-logger = logging.getLogger(__name__)
 router = APIRouter(prefix="/auth", tags=["auth"])
 
 
@@ -24,112 +28,132 @@ def _response(user: User) -> TokenResp:
     return TokenResp(access_token=create_access_token(user.id), user=UserOut.from_user(user))
 
 
-@router.get("/config", response_model=AuthConfigOut, summary="Public authentication configuration")
-def auth_config() -> AuthConfigOut:
-    return AuthConfigOut(
-        google_client_id=settings.google_client_id,
-        microsoft_client_id=settings.microsoft_client_id,
-        microsoft_authority=settings.microsoft_authority,
-    )
+def _setup(user: User, secret: str) -> TotpSetupOut:
+    uri, qr = build_totp_setup(secret, user.email)
+    return TotpSetupOut(secret=secret, otpauth_uri=uri, qr_code_data_uri=qr)
 
 
-@router.post("/provider", response_model=TokenResp, summary="Sign in with Google or Microsoft")
-@limiter.limit("10/minute")
-def provider_login(request: Request, req: ProviderTokenReq, db: Session = Depends(get_db)) -> TokenResp:
-    try:
-        identity = verify_external_token(req.provider, req.id_token)
-    except ValueError as exc:
-        audit.log_event(
-            db, event=audit.EV_LOGIN_FAIL, ip=client_ip(request),
-            user_agent=client_ua(request),
-            details={"provider": req.provider, "reason": str(exc)},
-        )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail=str(exc)) from exc
-    except Exception:
-        logger.exception("External identity verification failed")
-        audit.log_event(
-            db, event=audit.EV_LOGIN_FAIL, ip=client_ip(request),
-            user_agent=client_ua(request),
-            details={"provider": req.provider, "reason": "token verification error"},
-        )
-        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Identity verification failed.")
+@router.post("/register", response_model=TotpSetupOut, summary="Register and configure an authenticator app")
+@limiter.limit("5/hour")
+def register(request: Request, req: RegisterReq, db: Session = Depends(get_db)) -> TotpSetupOut:
+    email = str(req.email).strip().lower()
+    user = db.query(User).filter(User.email == email).first()
 
-    provider = identity["provider"]
-    subject = identity["subject"]
-    email = identity["email"]
-    name = (identity.get("name") or "").strip() or None
+    if user is not None and user.totp_enabled:
+        raise HTTPException(status_code=status.HTTP_409_CONFLICT, detail="An account with this email already exists.")
 
-    user = db.query(User).filter(
-        User.auth_provider == provider,
-        User.auth_subject == subject,
-    ).first()
-    is_new_user = user is None
+    secret = generate_totp_secret()
 
     if user is None:
-        existing = db.query(User).filter(User.email == email).first()
-        if existing is not None:
-            if existing.auth_provider not in {"legacy", provider}:
-                raise HTTPException(
-                    status_code=status.HTTP_409_CONFLICT,
-                    detail="This email is already linked to another sign-in provider. Sign in with that provider first.",
-                )
-            user = existing
-            user.auth_provider = provider
-            user.auth_subject = subject
-            user.password_hash = None
-        else:
-            user = User(
-                email=email,
-                auth_provider=provider,
-                auth_subject=subject,
-                full_name=name,
-                password_hash=None,
-                plan="free",
-                is_active=True,
-            )
-            db.add(user)
+        user = User(
+            email=email,
+            auth_provider="totp",
+            auth_subject=f"totp:{email}",
+            full_name=req.full_name,
+            phone_number=req.phone_number,
+            totp_secret_encrypted=encrypt_totp_secret(secret),
+            totp_enabled=False,
+            password_hash=None,
+            plan="free",
+            is_active=True,
+        )
+        db.add(user)
+    else:
+        user.auth_provider = "totp"
+        user.auth_subject = f"totp:{email}"
+        user.full_name = req.full_name
+        user.phone_number = req.phone_number
+        user.totp_secret_encrypted = encrypt_totp_secret(secret)
+        user.totp_enabled = False
+        user.password_hash = None
 
-    if not user.is_active:
-        raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Account is disabled.")
+    db.commit()
+    db.refresh(user)
 
-    if name and not user.full_name:
-        user.full_name = name
+    audit.log_event(
+        db, user_id=user.id, event=audit.EV_REGISTER,
+        ip=client_ip(request), user_agent=client_ua(request),
+        details={"method": "totp"},
+    )
+    return _setup(user, secret)
+
+
+@router.post("/setup/verify", response_model=TokenResp, summary="Verify the authenticator code and activate the account")
+@limiter.limit("10/minute")
+def verify_setup(
+    request: Request,
+    req: LoginReq,
+    db: Session = Depends(get_db),
+) -> TokenResp:
+    email = str(req.email).strip().lower()
+    user = db.query(User).filter(User.email == email).first()
+    if user is None or not user.totp_secret_encrypted:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Account setup was not found.")
+
+    from server.auth import decrypt_totp_secret
+    try:
+        secret = decrypt_totp_secret(user.totp_secret_encrypted)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_500_INTERNAL_SERVER_ERROR, detail="Authenticator setup is invalid.") from exc
+
+    if not verify_totp(secret, req.code):
+        audit.log_event(
+            db, user_id=user.id, event=audit.EV_LOGIN_FAIL,
+            ip=client_ip(request), user_agent=client_ua(request),
+            details={"method": "totp", "stage": "setup"},
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid authenticator code.")
+
+    user.totp_enabled = True
+    user.last_login_at = datetime.now(timezone.utc)
+    db.commit()
+    db.refresh(user)
+
+    audit.log_event(
+        db, user_id=user.id, event=audit.EV_LOGIN_OK,
+        ip=client_ip(request), user_agent=client_ua(request),
+        details={"method": "totp", "stage": "activation"},
+    )
+    return _response(user)
+
+
+@router.post("/login", response_model=TokenResp, summary="Sign in with authenticator code")
+@limiter.limit("10/minute")
+def login(
+    request: Request,
+    req: LoginReq,
+    db: Session = Depends(get_db),
+) -> TokenResp:
+    email = str(req.email).strip().lower()
+    user = db.query(User).filter(User.email == email).first()
+
+    if user is None or not user.is_active or not user.totp_enabled or not user.totp_secret_encrypted:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or authenticator code.")
+
+    from server.auth import decrypt_totp_secret
+    try:
+        secret = decrypt_totp_secret(user.totp_secret_encrypted)
+    except ValueError:
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Authenticator configuration is invalid.")
+
+    if not verify_totp(secret, req.code):
+        audit.log_event(
+            db, user_id=user.id, event=audit.EV_LOGIN_FAIL,
+            ip=client_ip(request), user_agent=client_ua(request),
+            details={"method": "totp"},
+        )
+        raise HTTPException(status_code=status.HTTP_401_UNAUTHORIZED, detail="Invalid email or authenticator code.")
 
     user.last_login_at = datetime.now(timezone.utc)
     db.commit()
     db.refresh(user)
 
-    if is_new_user:
-        audit.log_event(
-            db, user_id=user.id, event=audit.EV_REGISTER,
-            ip=client_ip(request), user_agent=client_ua(request),
-            details={"provider": provider},
-        )
     audit.log_event(
         db, user_id=user.id, event=audit.EV_LOGIN_OK,
         ip=client_ip(request), user_agent=client_ua(request),
-        details={"provider": provider},
+        details={"method": "totp"},
     )
     return _response(user)
-
-
-@router.patch("/profile", response_model=UserOut, summary="Complete required profile")
-@limiter.limit("10/minute")
-def update_profile(
-    request: Request,
-    req: ProfileUpdateReq,
-    user: User = Depends(get_current_user),
-    db: Session = Depends(get_db),
-) -> UserOut:
-    user.full_name = req.full_name
-    user.phone_number = req.phone_number
-    db.commit()
-    db.refresh(user)
-    audit.log_event(
-        db, user_id=user.id, event="profile_updated",
-        ip=client_ip(request), user_agent=client_ua(request),
-    )
-    return UserOut.from_user(user)
 
 
 @router.get("/me", response_model=UserOut, summary="Current authenticated user")
