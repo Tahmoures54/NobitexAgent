@@ -100,8 +100,9 @@ class TestRefreshFreeUser:
 class TestRefreshProUser:
 
     def test_pro_user_unlimited(self, client, stub_scanner, pro_headers):
-        # 10 refreshes in a row should all succeed
-        for i in range(10):
+        # Five refreshes stay within the route's 5/minute transport rate limit.
+        # Pro has no daily quota; transport throttling still applies.
+        for i in range(5):
             r = client.post("/api/scan/refresh", headers=pro_headers)
             assert r.status_code == 200, f"attempt {i}: {r.text}"
             assert r.json()["remaining_today"] == -1  # unlimited marker
