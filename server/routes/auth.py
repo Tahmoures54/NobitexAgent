@@ -49,13 +49,10 @@ def register(request: Request, req: RegisterReq, db: Session = Depends(get_db)) 
 
     user = User(
         email=email,
-        auth_provider="totp",
-        auth_subject=f"totp:{email}",
         full_name=req.full_name,
         phone_number=req.phone_number,
         totp_secret_encrypted=encrypt_totp_secret(secret),
         totp_enabled=False,
-        password_hash=None,
         plan="free",
         is_active=True,
     )
