@@ -85,14 +85,16 @@ from server.routes import scan as scan_routes
 from server.routes import paper as paper_routes
 from server.routes import admin as admin_routes
 from server.routes import health as health_routes
-from server.routes import backtest as backtest_routes\nfrom server.routes import live as live_routes
+from server.routes import backtest as backtest_routes
+from server.routes import live as live_routes
 
 app.include_router(health_routes.router)
 app.include_router(auth_routes.router)
 app.include_router(scan_routes.router)
 app.include_router(paper_routes.router)
 app.include_router(admin_routes.router)
-app.include_router(backtest_routes.router)\napp.include_router(live_routes.router)
+app.include_router(backtest_routes.router)
+app.include_router(live_routes.router)
 
 WEB_DIR = Path(__file__).resolve().parent.parent / settings.web_dir
 if WEB_DIR.exists():
