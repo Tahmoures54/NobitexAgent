@@ -24,13 +24,8 @@ class User(Base):
     id: Mapped[int] = mapped_column(Integer, primary_key=True, index=True)
     email: Mapped[str] = mapped_column(String(255), unique=True, index=True, nullable=False)
 
-    # Legacy password storage is nullable because password authentication is retired.
-    password_hash: Mapped[Optional[str]] = mapped_column(String(255), nullable=True)
-
     # Passwordless application authentication uses an authenticator-app TOTP secret.
     # The secret is encrypted at rest; the plaintext secret is never stored.
-    auth_provider: Mapped[str] = mapped_column(String(32), nullable=False, default="totp")
-    auth_subject: Mapped[str] = mapped_column(String(255), nullable=False)
     totp_secret_encrypted: Mapped[Optional[str]] = mapped_column(Text, nullable=True)
     totp_enabled: Mapped[bool] = mapped_column(Boolean, default=False, nullable=False)
     full_name: Mapped[Optional[str]] = mapped_column(String(120), nullable=True)
@@ -52,12 +47,8 @@ class User(Base):
         "AuditLog", back_populates="user", cascade="all, delete-orphan"
     )
 
-    __table_args__ = (
-        UniqueConstraint("auth_provider", "auth_subject", name="uq_users_auth_provider_subject"),
-    )
-
     def __repr__(self) -> str:
-        return f"<User id={self.id} email={self.email!r} auth=totp>"
+        return f"<User id={self.id} email={self.email!r} auth=authenticator>"
 
 
 class Trade(Base):
