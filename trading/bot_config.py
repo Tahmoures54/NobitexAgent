@@ -448,6 +448,21 @@ MONEY_SIZING_DEFAULTS: Dict[str, Any] = {
 }
 
 # v8 — Eagle Exception: allow strong movers through when BTC dumps.
+UNIFIED_EXECUTION_DEFAULTS: Dict[str, Any] = {
+    "strategy_defaults_version": 10,
+    "stop_loss_pct": 3.0,
+    "trailing_distance_pct": 3.0,
+    "trailing_activation_pct": 3.0,
+    "take_profit_percent": 50.0,
+    "capital_usage_pct": 90.0,
+    "max_position_pct": 90.0,
+    "max_total_exposure_pct": 90.0,
+    "btc_dump_exception_enabled": False,
+    "global_pump_threshold_pct": 0.0,
+    "min_nobitex_discount_pct": 0.0,
+    "max_nobitex_discount_pct": 0.0,
+}
+
 EAGLE_DEFAULTS: Dict[str, Any] = {
     "strategy_defaults_version": 8,
     "btc_dump_exception_enabled": False,
@@ -501,6 +516,9 @@ def load_config(file_path: str = DEFAULT_CONFIG_FILE) -> BotConfig:
             if version < 9:
                 for k, v in MONEY_SIZING_DEFAULTS.items():
                     data.setdefault(k, v)
+            if version < 10:
+                for k, v in UNIFIED_EXECUTION_DEFAULTS.items():
+                    data[k] = v
 
             cfg = BotConfig.from_dict(data)
             cfg.execution_mode = normalize_execution_mode(getattr(cfg, "execution_mode", PAPER))
@@ -558,6 +576,12 @@ def validate_config(config: BotConfig) -> List[str]:
         errors.append("risk_per_trade_pct must be between 0 and 100.")
     if c.max_open_positions < 1:
         errors.append("max_open_positions must be >= 1.")
+    if not (0 < c.capital_usage_pct <= 100):
+        errors.append("capital_usage_pct must be between 0 and 100.")
+    if not (0 < c.max_position_pct <= 100):
+        errors.append("max_position_pct must be between 0 and 100.")
+    if not (0 < c.max_total_exposure_pct <= 100):
+        errors.append("max_total_exposure_pct must be between 0 and 100.")
     if c.stop_loss_pct <= 0:
         errors.append("stop_loss_pct must be > 0.")
     if c.max_drawdown_percent <= 0:
