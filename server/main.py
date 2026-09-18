@@ -60,6 +60,12 @@ async def lifespan(app: FastAPI):
             "with at least 32 characters."
         )
 
+    if not settings.debug and settings.database_url.startswith("sqlite"):
+        raise RuntimeError(
+            "Production startup refused: DATABASE_URL must use PostgreSQL; "
+            "SQLite is development-only for this hosted service."
+        )
+
     if settings.auto_create_db:
         init_db()
     if settings.run_scheduler:
