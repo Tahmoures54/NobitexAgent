@@ -37,6 +37,34 @@
     </p>
   </div>
 
+  <!-- Market history / backtest dataset -->
+  <div class="panel mb-6" style="padding:16px;" x-data="historyStatus()" x-init="init()">
+    <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+      <div>
+        <h2 class="panel-title" style="margin:0;">Market History</h2>
+        <div class="text-xs mt-1" style="color:var(--text-muted);">Persistent Global + Nobitex dataset for backtesting</div>
+      </div>
+      <span class="badge" :class="statusClass" x-text="status.status || '—'"></span>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-4 gap-3">
+      <div><div class="text-xs" style="color:var(--text-muted);">Snapshots</div><div class="text-xl font-bold" x-text="status.snapshots ?? '—'"></div></div>
+      <div><div class="text-xs" style="color:var(--text-muted);">Rows</div><div class="text-xl font-bold" x-text="Fmt.compact(status.rows)"></div></div>
+      <div><div class="text-xs" style="color:var(--text-muted);">Global Data</div><div class="text-xl font-bold" x-text="status.global_coverage_pct != null ? status.global_coverage_pct.toFixed(1) + '%' : '—'"></div></div>
+      <div><div class="text-xs" style="color:var(--text-muted);">Last Scan</div><div class="text-xl font-bold" x-text="status.last_snapshot ? Fmt.datetime(status.last_snapshot) : '—'"></div></div>
+    </div>
+    <div class="flex flex-wrap items-center justify-between gap-2 mt-4 text-xs" style="color:var(--text-muted);">
+      <span x-text="status.first_snapshot ? 'Collecting since ' + Fmt.datetime(status.first_snapshot) : 'Waiting for the first worker scan…'"></span>
+      <span x-text="status.last_age_seconds != null ? 'Last snapshot ' + status.last_age_seconds + 's ago • every ' + status.scan_interval_minutes + 'm' : 'Worker not reporting yet'"></span>
+    </div>
+    <div class="mt-4 flex gap-2">
+      <button @click="load()" class="btn btn-secondary btn-sm">↻ Refresh</button>
+      <button @click="runBacktest()" :disabled="loading" class="btn btn-primary btn-sm" x-text="loading ? 'Running…' : 'Run 7-day Backtest'"></button>
+    </div>
+    <div x-show="result" class="mt-4 text-xs" style="color:var(--text-muted);">
+      <span x-text="resultText"></span>
+    </div>
+  </div>
+
   <!-- Paper trading stats -->
   <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
     <div class="panel" style="padding:16px;">
@@ -188,6 +216,38 @@
     };
   }
   window.dashboardApp = dashboardApp;
+
+  function historyStatus() {
+    return {
+      Fmt,
+      status: {},
+      loading: false,
+      result: false,
+      resultText: '',
+      get statusClass() {
+        const s=(this.status.status||'').toLowerCase();
+        return s==='collecting' ? 'badge-buy' : s==='stale' ? 'badge-sell' : 'badge-neutral';
+      },
+      async init() {
+        await this.load();
+        setInterval(() => this.load(), 60000);
+      },
+      async load() {
+        try { this.status=await API.backtest.status(); }
+        catch(err) { this.status={status:'UNAVAILABLE'}; console.warn('history status failed',err); }
+      },
+      async runBacktest() {
+        this.loading=true;
+        try {
+          const r=await API.backtest.run(7);
+          this.result=true;
+          this.resultText=`7-day result: ${r.trades ?? 0} trades • return ${Number(r.return_pct ?? 0).toFixed(2)}% • drawdown ${Number(r.max_drawdown_pct ?? 0).toFixed(2)}% • snapshots ${r.snapshots ?? 0}`;
+        } catch(err) { UI.error(err.message || 'Backtest failed.'); }
+        finally { this.loading=false; }
+      }
+    };
+  }
+  window.historyStatus = historyStatus;
 </script>
 </body>
 </html>
