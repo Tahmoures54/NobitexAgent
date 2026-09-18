@@ -19,7 +19,7 @@ import time
 from collections import defaultdict
 from typing import Optional
 
-from fastapi import APIRouter, Depends, HTTPException, Request, status
+from fastapi import APIRouter, Depends, HTTPException, Request, Response, status
 from sqlalchemy.orm import Session
 
 from server.auth import get_optional_user
@@ -96,6 +96,7 @@ def get_scan() -> ScanResponse:
 @limiter.limit("5/minute")
 def refresh_scan(
     request: Request,
+    response: Response,
     user: Optional[User] = Depends(get_optional_user),
     db: Session = Depends(get_db),
 ) -> ScanRefreshResp:
