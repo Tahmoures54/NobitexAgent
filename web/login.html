@@ -3,241 +3,144 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-<title>Sign in — CryptoScanner</title>
-<link rel="icon" href="/assets/eagle.png" type="image/png" />
+<title>CryptoScanner — Authenticator</title>
 <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
-<script src="https://accounts.google.com/gsi/client" async defer></script>
-<script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js" defer></script>
 <link rel="stylesheet" href="/style.css" />
+<style>
+  .qr-box { background:#fff; border-radius:14px; padding:14px; display:inline-block; }
+  .secret { word-break:break-all; font-family:monospace; font-size:12px; }
+</style>
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">
-
-<div x-data="authApp()" x-init="init()" class="w-full max-w-md panel fade-in">
+<div x-data="authApp()" class="w-full max-w-md panel fade-in">
   <div class="text-center mb-6">
     <div style="font-size:40px;">🦅</div>
     <h1 class="text-xl font-bold mt-2">CryptoScanner</h1>
     <p class="text-xs mt-1" style="color:var(--text-muted);">
-      Sign in securely with your Google or Microsoft account
+      Passwordless sign-in with Google Authenticator or Microsoft Authenticator
     </p>
   </div>
 
-  <div x-show="!profileRequired" class="space-y-4">
-    <div>
-      <div class="text-xs mb-2 text-center" style="color:var(--text-secondary);">
-        New users and returning users use the same secure sign-in.
+  <div x-show="mode === 'login'" x-cloak class="space-y-4">
+    <h2 class="font-semibold">Sign in</h2>
+    <input x-model="email" type="email" autocomplete="email" class="input"
+           placeholder="Email address" />
+    <input x-model="code" type="text" inputmode="numeric" autocomplete="one-time-code"
+           maxlength="6" class="input text-center tracking-widest"
+           placeholder="6-digit authenticator code" />
+    <button @click="login()" :disabled="busy" class="btn btn-primary w-full" style="padding:12px;">
+      <span x-show="!busy">Sign in</span>
+      <span x-show="busy">Verifying…</span>
+    </button>
+    <button @click="mode='register'; error=''" class="btn btn-secondary w-full" style="padding:12px;">
+      Create account
+    </button>
+    <p class="text-xs text-center" style="color:var(--text-muted);">
+      The code changes automatically in your authenticator app.
+    </p>
+  </div>
+
+  <div x-show="mode === 'register'" x-cloak class="space-y-4">
+    <h2 class="font-semibold">Create your account</h2>
+    <input x-model="fullName" type="text" maxlength="120" autocomplete="name"
+           class="input" placeholder="Full name" />
+    <input x-model="email" type="email" autocomplete="email" class="input"
+           placeholder="Email address" />
+    <input x-model="phone" type="tel" maxlength="32" autocomplete="tel"
+           class="input" placeholder="+989121234567" />
+    <button @click="register()" :disabled="busy" class="btn btn-primary w-full" style="padding:12px;">
+      <span x-show="!busy">Create & set up Authenticator</span>
+      <span x-show="busy">Preparing setup…</span>
+    </button>
+    <button @click="mode='login'; error=''" class="btn btn-secondary w-full" style="padding:12px;">
+      Back to sign in
+    </button>
+  </div>
+
+  <div x-show="mode === 'setup'" x-cloak class="space-y-4">
+    <h2 class="font-semibold">Activate your authenticator</h2>
+    <p class="text-xs" style="color:var(--text-muted);">
+      Scan this QR code with Google Authenticator or Microsoft Authenticator.
+      Both apps support QR-based TOTP accounts, including non-Microsoft accounts.
+    </p>
+
+    <div class="text-center">
+      <div class="qr-box"><img :src="qr" alt="Authenticator setup QR code" width="220" height="220" /></div>
+    </div>
+
+    <details>
+      <summary class="cursor-pointer text-xs">Can't scan the QR code?</summary>
+      <div class="mt-2 p-3 rounded" style="background:var(--panel);">
+        <div class="text-xs mb-1">Manual setup key</div>
+        <div class="secret" x-text="secret"></div>
       </div>
-      <div id="google-signin" class="flex justify-center min-h-[44px]"></div>
-    </div>
+    </details>
 
-    <div class="flex items-center gap-3">
-      <div class="h-px flex-1" style="background:var(--border);"></div>
-      <span class="text-xs" style="color:var(--text-muted);">OR</span>
-      <div class="h-px flex-1" style="background:var(--border);"></div>
-    </div>
-
-    <button @click="signInMicrosoft()" :disabled="busy || !config.microsoft_client_id"
-            class="btn btn-secondary w-full" style="padding:12px;">
-      <span x-show="!busy">Continue with Microsoft</span>
-      <span x-show="busy">Please wait…</span>
-    </button>
-
-    <div x-show="!config.google_client_id && !config.microsoft_client_id"
-         class="text-xs p-3 rounded"
-         style="color:#FCA5A5;background:rgba(239,68,68,.1);">
-      External authentication is not configured on this server yet.
-    </div>
-  </div>
-
-  <div x-show="profileRequired" x-cloak class="space-y-4">
-    <div>
-      <h2 class="font-semibold">Complete your profile</h2>
-      <p class="text-xs mt-1" style="color:var(--text-muted);">
-        We only need your name and phone number to finish your account.
-      </p>
-    </div>
-
-    <div>
-      <label class="block text-xs mb-1" style="color:var(--text-secondary);">Full name</label>
-      <input x-model="fullName" type="text" required maxlength="120"
-             autocomplete="name" class="input" placeholder="Your full name" />
-    </div>
-
-    <div>
-      <label class="block text-xs mb-1" style="color:var(--text-secondary);">Phone number</label>
-      <input x-model="phoneNumber" type="tel" required maxlength="32"
-             autocomplete="tel" class="input" placeholder="+989121234567" />
-      <p class="text-xs mt-1" style="color:var(--text-muted);">Use international format.</p>
-    </div>
-
-    <div x-show="error" x-cloak class="text-xs p-2 rounded"
-         style="color:#FCA5A5;background:rgba(239,68,68,.1);" x-text="error"></div>
-
-    <button @click="saveProfile()" :disabled="busy"
-            class="btn btn-primary w-full" style="padding:12px;">
-      <span x-show="!busy">Continue to CryptoScanner</span>
-      <span x-show="busy">Saving…</span>
+    <input x-model="code" type="text" inputmode="numeric" autocomplete="one-time-code"
+           maxlength="6" class="input text-center tracking-widest"
+           placeholder="Enter the 6-digit code" />
+    <button @click="activate()" :disabled="busy" class="btn btn-primary w-full" style="padding:12px;">
+      <span x-show="!busy">Activate & continue</span>
+      <span x-show="busy">Activating…</span>
     </button>
   </div>
 
-  <div x-show="error && !profileRequired" x-cloak
-       class="text-xs p-2 mt-4 rounded"
+  <div x-show="error" x-cloak class="text-xs p-3 mt-4 rounded"
        style="color:#FCA5A5;background:rgba(239,68,68,.1);" x-text="error"></div>
-
-  <p class="text-center text-xs mt-5" style="color:var(--text-muted);">
-    <a href="/">← Back to scanner</a>
-  </p>
 </div>
 
 <script src="/app.js"></script>
 <script>
-  window.handleGoogleCredential = async function(response) {
-    window.dispatchEvent(new CustomEvent('cs-provider-login', {
-      detail: { provider: 'google', idToken: response.credential }
-    }));
+function authApp() {
+  return {
+    mode: 'login',
+    email: '',
+    fullName: '',
+    phone: '',
+    code: '',
+    secret: '',
+    qr: '',
+    busy: false,
+    error: '',
+
+    async register() {
+      this.busy = true; this.error = '';
+      try {
+        const result = await API.auth.register(this.email, this.fullName, this.phone);
+        this.secret = result.secret;
+        this.qr = result.qr_code_data_uri;
+        this.mode = 'setup';
+        this.code = '';
+      } catch (err) {
+        this.error = err.message || 'Registration failed.';
+      } finally { this.busy = false; }
+    },
+
+    async activate() {
+      this.busy = true; this.error = '';
+      try {
+        const result = await API.auth.setupVerify(this.email, this.code);
+        Auth.setSession(result.access_token, result.user);
+        window.location.href = '/dashboard.html';
+      } catch (err) {
+        this.error = err.message || 'Invalid authenticator code.';
+      } finally { this.busy = false; }
+    },
+
+    async login() {
+      this.busy = true; this.error = '';
+      try {
+        const result = await API.auth.login(this.email, this.code);
+        Auth.setSession(result.access_token, result.user);
+        window.location.href = '/dashboard.html';
+      } catch (err) {
+        this.error = err.message || 'Invalid email or authenticator code.';
+      } finally { this.busy = false; }
+    },
   };
-
-  function authApp() {
-    return {
-      config: {
-        google_client_id: '',
-        microsoft_client_id: '',
-        microsoft_authority: 'https://login.microsoftonline.com/common/v2.0',
-      },
-      msalInstance: null,
-      profileRequired: false,
-      fullName: '',
-      phoneNumber: '',
-      busy: false,
-      error: '',
-      next: '/dashboard.html',
-
-      async init() {
-        if (Auth.isLoggedIn()) {
-          window.location.href = this.getNext();
-          return;
-        }
-
-        window.addEventListener('cs-provider-login', (event) => {
-          this.completeProviderLogin(event.detail.provider, event.detail.idToken);
-        });
-
-        try {
-          this.config = await API.auth.config();
-          await this.setupGoogle();
-          await this.setupMicrosoft();
-        } catch (err) {
-          this.error = err.message || 'Could not load authentication settings.';
-        }
-      },
-
-      async setupGoogle() {
-        if (!this.config.google_client_id) return;
-        for (let i = 0; i < 40 && !window.google?.accounts?.id; i++) {
-          await new Promise(resolve => setTimeout(resolve, 100));
-        }
-        if (!window.google?.accounts?.id) {
-          this.error = 'Google sign-in library could not be loaded.';
-          return;
-        }
-
-        google.accounts.id.initialize({
-          client_id: this.config.google_client_id,
-          callback: window.handleGoogleCredential,
-          ux_mode: 'popup',
-          context: 'signin',
-        });
-        google.accounts.id.renderButton(
-          document.getElementById('google-signin'),
-          { theme: 'outline', size: 'large', shape: 'rectangular', width: 360, text: 'continue_with' }
-        );
-      },
-
-      async setupMicrosoft() {
-        if (!this.config.microsoft_client_id || !window.msal) return;
-        this.msalInstance = new msal.PublicClientApplication({
-          auth: {
-            clientId: this.config.microsoft_client_id,
-            authority: this.config.microsoft_authority,
-            redirectUri: window.location.origin + '/login.html',
-          },
-          cache: {
-            cacheLocation: 'sessionStorage',
-            storeAuthStateInCookie: false,
-          },
-        });
-        if (typeof this.msalInstance.initialize === 'function') {
-          await this.msalInstance.initialize();
-        }
-      },
-
-      async signInMicrosoft() {
-        if (!this.msalInstance) {
-          this.error = 'Microsoft sign-in is not configured or has not finished loading.';
-          return;
-        }
-        this.busy = true;
-        this.error = '';
-        try {
-          const result = await this.msalInstance.loginPopup({
-            scopes: ['openid', 'profile', 'email'],
-            prompt: 'select_account',
-          });
-          if (!result.idToken) throw new Error('Microsoft did not return an identity token.');
-          await this.completeProviderLogin('microsoft', result.idToken);
-        } catch (err) {
-          this.error = err?.message || 'Microsoft sign-in failed.';
-        } finally {
-          this.busy = false;
-        }
-      },
-
-      async completeProviderLogin(provider, idToken) {
-        if (!idToken || this.busy) return;
-        this.busy = true;
-        this.error = '';
-        try {
-          const res = await API.auth.provider(provider, idToken);
-          Auth.setSession(res.access_token, res.user);
-          this.fullName = res.user.full_name || '';
-          this.phoneNumber = res.user.phone_number || '';
-          if (res.user.profile_complete) {
-            UI.success('Welcome to CryptoScanner!');
-            window.location.href = this.getNext();
-          } else {
-            this.profileRequired = true;
-          }
-        } catch (err) {
-          this.error = err.message || 'Sign-in failed.';
-        } finally {
-          this.busy = false;
-        }
-      },
-
-      async saveProfile() {
-        this.busy = true;
-        this.error = '';
-        try {
-          const user = await API.auth.updateProfile(this.fullName, this.phoneNumber);
-          Auth.setSession(Auth.getToken(), user);
-          UI.success('Profile completed.');
-          setTimeout(() => { window.location.href = this.getNext(); }, 250);
-        } catch (err) {
-          this.error = err.message || 'Could not save your profile.';
-        } finally {
-          this.busy = false;
-        }
-      },
-
-      getNext() {
-        const params = new URLSearchParams(window.location.search);
-        const n = params.get('next');
-        return n && n.startsWith('/') ? n : '/dashboard.html';
-      },
-    };
-  }
-  window.authApp = authApp;
+}
 </script>
 </body>
 </html>
