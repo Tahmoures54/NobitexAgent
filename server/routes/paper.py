@@ -54,7 +54,10 @@ def open_trade(
             detail="size_usd must be at least 1.0",
         )
 
-    trade = paper_svc.open_trade(db, user.id, req)
+    try:
+        trade = paper_svc.open_trade(db, user.id, req)
+    except ValueError as exc:
+        raise HTTPException(status_code=status.HTTP_422_UNPROCESSABLE_ENTITY, detail=str(exc)) from exc
 
     logger.info(
         "Paper open via API | user=%d trade=%d %s",
