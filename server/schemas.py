@@ -86,6 +86,10 @@ class TradeOut(BaseModel):
     notional: float
     stop_loss: Optional[float]
     take_profit: Optional[float]
+    highest_price: Optional[float]
+    lowest_price: Optional[float]
+    trailing_stop: Optional[float]
+    trailing_active: bool
     pnl_pct: Optional[float]
     pnl_usd: Optional[float]
     status: str
