@@ -26,6 +26,10 @@ services:
           property: connectionString
       - key: ADMIN_EMAIL
         sync: false
+      - key: GOOGLE_CLIENT_ID
+        sync: false
+      - key: MICROSOFT_CLIENT_ID
+        sync: false
       - key: CORS_ORIGINS
         value: "[]"
       - key: SCAN_INTERVAL_MINUTES
