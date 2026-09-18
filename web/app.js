@@ -1,21 +1,16 @@
 /* ============================================================
    CryptoScanner Web — Shared utilities
-   Exposes: window.API, window.Auth, window.Fmt, window.UI
+   External identity auth: Google + Microsoft
    ============================================================ */
-
 (function () {
   'use strict';
 
-  // ── Constants ─────────────────────────────────────────────
   const TOKEN_KEY = 'cs_token';
-  const USER_KEY  = 'cs_user';
+  const USER_KEY = 'cs_user';
 
-  // ══════════════════════════════════════════════════════════
-  // Auth
-  // ══════════════════════════════════════════════════════════
   const Auth = {
-    getToken()  { return localStorage.getItem(TOKEN_KEY); },
-    getUser()   {
+    getToken() { return localStorage.getItem(TOKEN_KEY); },
+    getUser() {
       try { return JSON.parse(localStorage.getItem(USER_KEY) || 'null'); }
       catch { return null; }
     },
@@ -32,7 +27,6 @@
       this.clear();
       window.location.href = '/login.html';
     },
-    /** Redirect to login if not authenticated. Returns true if allowed. */
     requireLogin() {
       if (!this.isLoggedIn()) {
         const next = encodeURIComponent(window.location.pathname + window.location.search);
@@ -43,9 +37,6 @@
     },
   };
 
-  // ══════════════════════════════════════════════════════════
-  // API client
-  // ══════════════════════════════════════════════════════════
   async function request(method, path, body) {
     const headers = { 'Accept': 'application/json' };
     const token = Auth.getToken();
@@ -60,14 +51,11 @@
     let resp;
     try {
       resp = await fetch(path, { method, headers, body: payload });
-    } catch (err) {
+    } catch {
       throw new Error('Network error — check your connection.');
     }
 
-    // 401 → clear session and let caller handle
-    if (resp.status === 401) {
-      Auth.clear();
-    }
+    if (resp.status === 401) Auth.clear();
 
     let data = null;
     const ct = resp.headers.get('content-type') || '';
@@ -88,62 +76,61 @@
   }
 
   const API = {
-    get:    (path)       => request('GET',    path),
-    post:   (path, body) => request('POST',   path, body),
-    put:    (path, body) => request('PUT',    path, body),
+    get: (path) => request('GET', path),
+    post: (path, body) => request('POST', path, body),
+    put: (path, body) => request('PUT', path, body),
+    patch: (path, body) => request('PATCH', path, body),
     delete: (path, body) => request('DELETE', path, body),
 
-    // ── Semantic endpoints ──
     auth: {
-      register: (email, password) =>
-        request('POST', '/auth/register', { email, password }),
-      login: (email, password) =>
-        request('POST', '/auth/login', { email, password }),
-      me:    () => request('GET', '/auth/me'),
+      config: () => request('GET', '/auth/config'),
+      provider: (provider, idToken) =>
+        request('POST', '/auth/provider', { provider, id_token: idToken }),
+      updateProfile: (fullName, phoneNumber) =>
+        request('PATCH', '/auth/profile', {
+          full_name: fullName,
+          phone_number: phoneNumber,
+        }),
+      me: () => request('GET', '/auth/me'),
       logout: () => request('POST', '/auth/logout'),
     },
+
     scan: {
-      cached:  () => request('GET',  '/api/scan'),
+      cached: () => request('GET', '/api/scan'),
       refresh: () => request('POST', '/api/scan/refresh'),
-      status:  () => request('GET',  '/api/scan/status'),
+      status: () => request('GET', '/api/scan/status'),
     },
+
     paper: {
-      open:  (payload) => request('POST', '/api/paper/open', payload),
+      open: (payload) => request('POST', '/api/paper/open', payload),
       close: (id, price, reason) =>
         request('POST', `/api/paper/${id}/close`, { price, reason }),
-      list:  () => request('GET',  '/api/paper/list'),
-      stats: () => request('GET',  '/api/paper/stats'),
-      remove:(id) => request('DELETE', `/api/paper/${id}`),
+      list: () => request('GET', '/api/paper/list'),
+      stats: () => request('GET', '/api/paper/stats'),
+      remove: (id) => request('DELETE', `/api/paper/${id}`),
     },
+
     admin: {
       stats: () => request('GET', '/admin/stats'),
     },
   };
 
-  // ══════════════════════════════════════════════════════════
-  // Formatters
-  // ══════════════════════════════════════════════════════════
   const Fmt = {
     price(v, decimals) {
       const n = Number(v);
       if (v == null || isNaN(n)) return '—';
       const d = decimals != null ? decimals
-             : Math.abs(n) >= 1000 ? 2
-             : Math.abs(n) >= 1    ? 4
-             : Math.abs(n) >= 0.01 ? 6
-             : 8;
-      return n.toLocaleString('en-US', {
-        minimumFractionDigits: d,
-        maximumFractionDigits: d,
-      });
+        : Math.abs(n) >= 1000 ? 2
+        : Math.abs(n) >= 1 ? 4
+        : Math.abs(n) >= 0.01 ? 6 : 8;
+      return n.toLocaleString('en-US', { minimumFractionDigits: d, maximumFractionDigits: d });
     },
     usd(v, decimals = 2) {
       const n = Number(v);
       if (v == null || isNaN(n)) return '—';
       const sign = n < 0 ? '-' : '';
       return `${sign}$${Math.abs(n).toLocaleString('en-US', {
-        minimumFractionDigits: decimals,
-        maximumFractionDigits: decimals,
+        minimumFractionDigits: decimals, maximumFractionDigits: decimals,
       })}`;
     },
     usdSigned(v, decimals = 2) {
@@ -155,34 +142,31 @@
     pct(v, decimals = 2) {
       const n = Number(v);
       if (v == null || isNaN(n)) return '—';
-      const sign = n > 0 ? '+' : '';
-      return `${sign}${n.toFixed(decimals)}%`;
+      return `${n > 0 ? '+' : ''}${n.toFixed(decimals)}%`;
     },
     compact(v) {
       const n = Number(v);
       if (v == null || isNaN(n)) return '—';
       const abs = Math.abs(n);
       if (abs >= 1e12) return (n / 1e12).toFixed(2) + 'T';
-      if (abs >= 1e9)  return (n / 1e9 ).toFixed(2) + 'B';
-      if (abs >= 1e6)  return (n / 1e6 ).toFixed(2) + 'M';
-      if (abs >= 1e3)  return (n / 1e3 ).toFixed(2) + 'K';
+      if (abs >= 1e9) return (n / 1e9).toFixed(2) + 'B';
+      if (abs >= 1e6) return (n / 1e6).toFixed(2) + 'M';
+      if (abs >= 1e3) return (n / 1e3).toFixed(2) + 'K';
       return n.toFixed(2);
     },
     datetime(iso, opts) {
       if (!iso) return '—';
       try {
-        const d = new Date(iso);
-        return d.toLocaleString('en-US', opts || {
-          month: 'short', day: 'numeric',
-          hour: '2-digit', minute: '2-digit',
+        return new Date(iso).toLocaleString('en-US', opts || {
+          month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit',
         });
       } catch { return '—'; }
     },
     relTime(unixSec) {
       if (!unixSec) return '—';
       const s = Math.floor(Date.now() / 1000 - unixSec);
-      if (s < 5)   return 'just now';
-      if (s < 60)  return `${s}s ago`;
+      if (s < 5) return 'just now';
+      if (s < 60) return `${s}s ago`;
       if (s < 3600) return `${Math.floor(s / 60)}m ago`;
       if (s < 86400) return `${Math.floor(s / 3600)}h ago`;
       return `${Math.floor(s / 86400)}d ago`;
@@ -194,27 +178,24 @@
     },
     signalBadgeClass(signal) {
       switch ((signal || '').toLowerCase()) {
-        case 'strong buy':  return 'badge badge-strong-buy';
-        case 'buy signal':  return 'badge badge-buy';
+        case 'strong buy': return 'badge badge-strong-buy';
+        case 'buy signal': return 'badge badge-buy';
         case 'sell signal': return 'badge badge-sell';
         case 'strong sell': return 'badge badge-strong-sell';
-        default:            return 'badge badge-neutral';
+        default: return 'badge badge-neutral';
       }
     },
     riskBadgeClass(level) {
       switch ((level || '').toLowerCase()) {
-        case 'low':     return 'badge badge-low';
-        case 'medium':  return 'badge badge-medium';
-        case 'high':    return 'badge badge-high';
+        case 'low': return 'badge badge-low';
+        case 'medium': return 'badge badge-medium';
+        case 'high': return 'badge badge-high';
         case 'extreme': return 'badge badge-extreme';
-        default:        return 'badge badge-neutral';
+        default: return 'badge badge-neutral';
       }
     },
   };
 
-  // ══════════════════════════════════════════════════════════
-  // UI helpers (toast, confirm)
-  // ══════════════════════════════════════════════════════════
   const UI = {
     _container: null,
     _ensureContainer() {
@@ -242,24 +223,18 @@
       }, duration);
     },
     success(msg) { this.toast(msg, 'success'); },
-    error(msg)   { this.toast(msg, 'error', 5000); },
-    warn(msg)    { this.toast(msg, 'warning'); },
-
+    error(msg) { this.toast(msg, 'error', 5000); },
+    warn(msg) { this.toast(msg, 'warning'); },
     confirm(message, detail) {
-      const full = detail ? `${message}\n\n${detail}` : message;
-      return window.confirm(full);
+      return window.confirm(detail ? `${message}\n\n${detail}` : message);
     },
   };
 
-  // ══════════════════════════════════════════════════════════
-  // Export to window
-  // ══════════════════════════════════════════════════════════
-  window.API  = API;
+  window.API = API;
   window.Auth = Auth;
-  window.Fmt  = Fmt;
-  window.UI   = UI;
+  window.Fmt = Fmt;
+  window.UI = UI;
 
-  // Alpine.js global store (if Alpine is loaded)
   document.addEventListener('alpine:init', () => {
     if (!window.Alpine) return;
     window.Alpine.store('user', {
