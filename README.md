@@ -2,25 +2,51 @@
 
 CryptoScanner is a FastAPI-based crypto scanner with technical analysis, risk controls, paper trading, and a Nobitex IRT execution layer.
 
+## Strategy architecture
+
+The strategy is deliberately separated into two roles:
+
+- **Global lead:** CoinMarketCap reference data detects sustained global momentum.
+- **Local execution:** Nobitex IRT order-book data determines whether the local market has not already chased the move and whether execution quality is acceptable.
+
+This is a lead/lag hypothesis, not a profitability guarantee. The project now includes a deterministic backtest engine so the hypothesis can be measured with fees, spread, slippage and execution delay before increasing live exposure.
+
 ## What changed in 7.x
 
 - Centralized Rial/Toman conversion.
 - User-facing trade size is **1,000,000 Toman** by default.
 - Nobitex exchange quote is handled as Rial/RLS at the API boundary.
-- Added deterministic position sizing with balance, position and total-exposure caps.
-- Added `TradingBot.place_notional_order()` and `place_configured_entry()` so strategy code no longer has to calculate base quantity manually.
-- Paper and live execution are now mutually exclusive at the TradingBot boundary.
+- Deterministic position sizing with balance, position and total-exposure caps.
+- Paper and live execution are mutually exclusive at the TradingBot boundary.
 - A Nobitex account cannot receive live orders while `execution_mode` is `paper`.
-- Added release validation and removed runtime/secret artifacts from release packaging.
+- Production startup refuses weak secrets, SQLite, and unsafe database bootstrap settings.
+- Added a cost-aware **Global Lead → Nobitex backtest engine** with SL, trailing stop, TP, fees, slippage and entry-delay modelling.
+
+## Profitability validation
+
+Do not judge the strategy from win rate alone. The important outputs are net return, expectancy, profit factor, maximum drawdown, losing streak, fees and the complete trade list.
+
+The backtest accepts a CSV snapshot export with these fields (aliases are also accepted):
+
+    timestamp,symbol,Ask,Bid,Global1hPct,ObservedGlobalPct,SpreadPct,ChasePct
+
+Run:
+
+    python scripts\\run_backtest.py data\\market_snapshots.csv
+
+Useful stress tests:
+
+    python scripts\\run_backtest.py data\\market_snapshots.csv --delay 1 --fee 0.10 --slippage 0.20
+    python scripts\\run_backtest.py data\\market_snapshots.csv --delay 2 --fee 0.10 --slippage 0.20
+
+A result is not considered robust merely because one parameter set is profitable. Validate on separate development, validation and unseen test periods and include realistic costs.
 
 ## Money-unit rule
 
 For Nobitex:
 
-```text
-1 Toman = 10 Rial/RLS
-1,000,000 Toman = 10,000,000 Rial/RLS
-```
+    1 Toman = 10 Rial/RLS
+    1,000,000 Toman = 10,000,000 Rial/RLS
 
 The application accepts the user's position size in Toman and converts it exactly once at the execution boundary.
 
@@ -28,53 +54,47 @@ The application accepts the user's position size in Toman and converts it exactl
 
 `paper` is the safe default. `live` must be selected explicitly.
 
-```json
-{
-  "exchange": "nobitex",
-  "execution_mode": "paper",
-  "enable_auto_trading": false,
-  "fixed_position_toman": 1000000
-}
-```
+    {
+      "exchange": "nobitex",
+      "execution_mode": "paper",
+      "enable_auto_trading": false,
+      "fixed_position_toman": 1000000
+    }
 
 Use `configs_nobitex_irt.example.json` as a starting template. API credentials are stored outside the project package by `BotConfig`; never put credentials into JSON, README files or source control.
 
 ## Install
 
-```bat
-python -m venv .venv
-.venv\Scripts\activate
-pip install -r requirements.txt
-python -m scripts.init_db
-python -m scripts.health_check
-python main.py
-```
+    python -m venv .venv
+    .venv\\Scripts\\activate
+    pip install -r requirements.txt
+    python -m scripts.init_db
+    python -m scripts.health_check
+    python main.py
 
 Open `http://127.0.0.1:8000`.
 
 ## Validation
 
-```bat
-python scripts/release_check.py
-python -m py_compile main.py server\main.py trading\bot_config.py trading\trader.py money\currency.py portfolio\sizing.py execution\protection.py
-```
+    python scripts/release_check.py
+    python -m pytest -q
+    python -m py_compile main.py server\\main.py trading\\bot_config.py trading\\trader.py money\\currency.py portfolio\\sizing.py execution\\protection.py analytics\\backtest.py
 
 ## Architecture
 
-```text
-Market Data
-   └── Nobitex IRT market data
-          ↓
-Pump & Trend Signal Engine
-          ↓
-Risk Engine
-          ↓
-Portfolio / Position Sizing
-          ↓
-Execution Layer
-          ├── Paper simulator
-          └── Nobitex live adapter
-```
+    Global reference feed (CMC)
+              ↓
+    Global Lead / Momentum Engine
+              ↓
+    Nobitex IRT order-book + local lag filters
+              ↓
+    Risk Engine
+              ↓
+    Portfolio / Position Sizing (Toman → Rial once)
+              ↓
+    Execution Layer
+              ├── Paper simulator
+              └── Nobitex live adapter
 
 ## Online deployment
 
@@ -92,11 +112,7 @@ The web service and scheduler worker are separated in the current Render configu
 
 ### Vercel
 
-Vercel uses the FastAPI application directly through:
-
-```text
-server.main:app
-```
+Vercel uses the FastAPI application directly through `server.main:app`.
 
 The root `main.py` is the local application launcher; it is not the Vercel ASGI entrypoint.
 
@@ -104,7 +120,5 @@ The root `main.py` is the local application launcher; it is not the Vercel ASGI 
 
 Never put Nobitex API credentials in GitHub, `.env.example`, Docker images, or frontend JavaScript. Store them as server-side environment/secret values.
 
-```text
-Root local entry point: main.py
-FastAPI ASGI application: server.main:app
-```
+    Root local entry point: main.py
+    FastAPI ASGI application: server.main:app
