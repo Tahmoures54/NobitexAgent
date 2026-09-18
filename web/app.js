@@ -83,18 +83,17 @@
     delete: (path, body) => request('DELETE', path, body),
 
     auth: {
-      config: () => request('GET', '/auth/config'),
-      provider: (provider, idToken) =>
-        request('POST', '/auth/provider', { provider, id_token: idToken }),
-      updateProfile: (fullName, phoneNumber) =>
-        request('PATCH', '/auth/profile', {
-          full_name: fullName,
-          phone_number: phoneNumber,
+      register: (email, fullName, phoneNumber) =>
+        request('POST', '/auth/register', {
+          email, full_name: fullName, phone_number: phoneNumber,
         }),
+      setupVerify: (email, code) =>
+        request('POST', '/auth/setup/verify', { email, code }),
+      login: (email, code) =>
+        request('POST', '/auth/login', { email, code }),
       me: () => request('GET', '/auth/me'),
       logout: () => request('POST', '/auth/logout'),
     },
-
     scan: {
       cached: () => request('GET', '/api/scan'),
       refresh: () => request('POST', '/api/scan/refresh'),
