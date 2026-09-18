@@ -57,7 +57,10 @@ def create_access_token(user_id: int, extra: Optional[dict] = None) -> str:
         "exp": int(expire.timestamp()),
     }
     if extra:
-        payload.update(extra)
+        # Never allow optional claims to overwrite security-critical claims.
+        for key, value in extra.items():
+            if key not in {"sub", "iat", "exp", "nbf", "iss", "aud"}:
+                payload[key] = value
     return jwt.encode(payload, settings.secret_key, algorithm=settings.algorithm)
 
 
@@ -71,7 +74,7 @@ def decode_token(token: str) -> Optional[int]:
         if sub is None:
             return None
         return int(sub)
-    except (JWTError, ValueError, TypeError):
+    except (JWTError, ValueError, TypeError, OverflowError):
         return None
 
 
