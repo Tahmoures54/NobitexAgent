@@ -50,6 +50,16 @@ async def lifespan(app: FastAPI):
     logger.info("=" * 60)
 
     # Startup
+    if not settings.debug and (
+        settings.secret_key.startswith("CHANGE_ME")
+        or settings.secret_key.startswith("dev-only")
+        or len(settings.secret_key) < 32
+    ):
+        raise RuntimeError(
+            "Production startup refused: SECRET_KEY must be a unique value "
+            "with at least 32 characters."
+        )
+
     init_db()
     start_scheduler()
 
