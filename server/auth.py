@@ -1,17 +1,21 @@
 # server/auth.py
-"""External identity authentication and application JWT dependencies."""
+"""Passwordless TOTP authentication for Google Authenticator and Microsoft Authenticator."""
 from __future__ import annotations
 
+import base64
+import hashlib
 import logging
+import secrets
 from datetime import datetime, timedelta, timezone
+from io import BytesIO
 from typing import Optional
 
+import pyotp
+import qrcode
 import jwt as pyjwt
+from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
-from google.auth.transport import requests as google_requests
-from google.oauth2 import id_token as google_id_token
-from jwt import PyJWKClient
 from sqlalchemy.orm import Session
 
 from server.config import settings
@@ -19,20 +23,52 @@ from server.database import get_db
 from server.models import User
 
 logger = logging.getLogger(__name__)
-
 oauth2_scheme = HTTPBearer(auto_error=False)
 
-_microsoft_jwks = PyJWKClient(settings.microsoft_jwks_url)
+
+def _fernet() -> Fernet:
+    key = base64.urlsafe_b64encode(hashlib.sha256(settings.secret_key.encode("utf-8")).digest())
+    return Fernet(key)
+
+
+def encrypt_totp_secret(secret: str) -> str:
+    return _fernet().encrypt(secret.encode("utf-8")).decode("ascii")
+
+
+def decrypt_totp_secret(value: str) -> str:
+    try:
+        return _fernet().decrypt(value.encode("ascii")).decode("utf-8")
+    except (InvalidToken, ValueError, TypeError) as exc:
+        raise ValueError("Stored authenticator secret cannot be decrypted.") from exc
+
+
+def generate_totp_secret() -> str:
+    return pyotp.random_base32()
+
+
+def build_totp_setup(secret: str, email: str) -> tuple[str, str]:
+    uri = pyotp.TOTP(secret).provisioning_uri(
+        name=email,
+        issuer_name=settings.app_name,
+    )
+    qr = qrcode.QRCode(box_size=8, border=4)
+    qr.add_data(uri)
+    qr.make(fit=True)
+    image = qr.make_image()
+    buf = BytesIO()
+    image.save(buf, format="PNG")
+    data_uri = "data:image/png;base64," + base64.b64encode(buf.getvalue()).decode("ascii")
+    return uri, data_uri
+
+
+def verify_totp(secret: str, code: str) -> bool:
+    return pyotp.TOTP(secret).verify(str(code), valid_window=1)
 
 
 def create_access_token(user_id: int, extra: Optional[dict] = None) -> str:
     now = datetime.now(timezone.utc)
     expire = now + timedelta(minutes=settings.access_token_expire_minutes)
-    payload: dict = {
-        "sub": str(user_id),
-        "iat": int(now.timestamp()),
-        "exp": int(expire.timestamp()),
-    }
+    payload = {"sub": str(user_id), "iat": int(now.timestamp()), "exp": int(expire.timestamp())}
     if extra:
         for key, value in extra.items():
             if key not in {"sub", "iat", "exp", "nbf", "iss", "aud"}:
@@ -42,9 +78,7 @@ def create_access_token(user_id: int, extra: Optional[dict] = None) -> str:
 
 def decode_token(token: str) -> Optional[int]:
     try:
-        payload = pyjwt.decode(
-            token, settings.secret_key, algorithms=[settings.algorithm]
-        )
+        payload = pyjwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
         sub = payload.get("sub")
         return int(sub) if sub is not None else None
     except (pyjwt.PyJWTError, ValueError, TypeError, OverflowError):
@@ -59,85 +93,6 @@ def _unauthorized(detail: str = "Not authenticated") -> HTTPException:
     )
 
 
-def verify_google_id_token(raw_token: str) -> dict:
-    if not settings.google_client_id:
-        raise ValueError("Google authentication is not configured.")
-    claims = google_id_token.verify_oauth2_token(
-        raw_token,
-        google_requests.Request(),
-        settings.google_client_id,
-    )
-    if claims.get("iss") not in {"accounts.google.com", "https://accounts.google.com"}:
-        raise ValueError("Invalid Google token issuer.")
-    if not claims.get("sub") or not claims.get("email"):
-        raise ValueError("Google token does not contain a usable identity.")
-    if claims.get("email_verified") is not True:
-        raise ValueError("Google email is not verified.")
-    return claims
-
-
-def verify_microsoft_id_token(raw_token: str) -> dict:
-    if not settings.microsoft_client_id:
-        raise ValueError("Microsoft authentication is not configured.")
-
-    try:
-        unverified = pyjwt.decode(raw_token, options={"verify_signature": False})
-        issuer = str(unverified.get("iss") or "")
-        tenant_id = str(unverified.get("tid") or "")
-        if not tenant_id or not issuer.startswith("https://login.microsoftonline.com/"):
-            raise ValueError("Invalid Microsoft token issuer.")
-        expected_issuer = f"https://login.microsoftonline.com/{tenant_id}/v2.0"
-        if issuer.rstrip("/") != expected_issuer:
-            raise ValueError("Invalid Microsoft token issuer.")
-
-        signing_key = _microsoft_jwks.get_signing_key_from_jwt(raw_token)
-        claims = pyjwt.decode(
-            raw_token,
-            signing_key.key,
-            algorithms=["RS256"],
-            audience=settings.microsoft_client_id,
-            issuer=expected_issuer,
-            options={"require": ["exp", "iat", "sub", "tid", "aud", "iss"]},
-        )
-    except (pyjwt.PyJWTError, ValueError, TypeError) as exc:
-        raise ValueError("Invalid Microsoft identity token.") from exc
-
-    subject = claims.get("oid") or claims.get("sub")
-    if not subject:
-        raise ValueError("Microsoft token does not contain a stable subject.")
-
-    email = claims.get("email") or claims.get("preferred_username")
-    if not email or "@" not in str(email):
-        raise ValueError("Microsoft account did not provide an email address.")
-
-    return {
-        **claims,
-        "sub": str(subject),
-        "email": str(email).strip().lower(),
-    }
-
-
-def verify_external_token(provider: str, raw_token: str) -> dict:
-    provider = provider.strip().lower()
-    if provider == "google":
-        claims = verify_google_id_token(raw_token)
-        return {
-            "provider": "google",
-            "subject": str(claims["sub"]),
-            "email": str(claims["email"]).strip().lower(),
-            "name": claims.get("name"),
-        }
-    if provider == "microsoft":
-        claims = verify_microsoft_id_token(raw_token)
-        return {
-            "provider": "microsoft",
-            "subject": str(claims["sub"]),
-            "email": str(claims["email"]).strip().lower(),
-            "name": claims.get("name"),
-        }
-    raise ValueError("Unsupported authentication provider.")
-
-
 def get_current_user(
     credentials: Optional[HTTPAuthorizationCredentials] = Depends(oauth2_scheme),
     db: Session = Depends(get_db),
@@ -150,8 +105,8 @@ def get_current_user(
     user = db.get(User, uid)
     if user is None:
         raise _unauthorized("User not found")
-    if not user.is_active:
-        raise _unauthorized("Account is disabled")
+    if not user.is_active or not user.totp_enabled:
+        raise _unauthorized("Authenticator verification is required")
     return user
 
 
@@ -165,18 +120,13 @@ def get_optional_user(
     if uid is None:
         return None
     user = db.get(User, uid)
-    if user is None or not user.is_active:
+    if user is None or not user.is_active or not user.totp_enabled:
         return None
     return user
 
 
 __all__ = [
-    "create_access_token",
-    "decode_token",
-    "verify_external_token",
-    "verify_google_id_token",
-    "verify_microsoft_id_token",
-    "get_current_user",
-    "get_optional_user",
-    "oauth2_scheme",
+    "create_access_token", "decode_token", "encrypt_totp_secret",
+    "decrypt_totp_secret", "generate_totp_secret", "build_totp_setup",
+    "verify_totp", "get_current_user", "get_optional_user", "oauth2_scheme",
 ]
