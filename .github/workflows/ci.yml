@@ -21,9 +21,34 @@ jobs:
         run: pip install -r requirements.txt
       - name: Compile
         run: python -m compileall -q server analysis api core execution money portfolio trading tests
+      - name: Migration upgrade
+        env:
+          SECRET_KEY: ci-test-secret-key-12345678901234567890
+          TOTP_ENCRYPTION_KEY: ci-totp-fernet-key-123456789012345678901234567890
+          DATABASE_URL: sqlite:///./data/migration-ci.db
+          DEBUG: "true"
+          AUTO_CREATE_DB: "false"
+          RUN_SCHEDULER: "false"
+        run: |
+          rm -f data/migration-ci.db
+          alembic upgrade head
+          alembic current
+      - name: Migration downgrade and re-upgrade
+        env:
+          SECRET_KEY: ci-test-secret-key-12345678901234567890
+          TOTP_ENCRYPTION_KEY: ci-totp-fernet-key-123456789012345678901234567890
+          DATABASE_URL: sqlite:///./data/migration-ci.db
+          DEBUG: "true"
+          AUTO_CREATE_DB: "false"
+          RUN_SCHEDULER: "false"
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+          alembic current
       - name: Test
         env:
           SECRET_KEY: ci-test-secret-key-12345678901234567890
+          TOTP_ENCRYPTION_KEY: ci-totp-fernet-key-123456789012345678901234567890
           DATABASE_URL: sqlite:///./data/ci.db
           DEBUG: "true"
           AUTO_CREATE_DB: "true"
