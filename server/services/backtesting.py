@@ -2,7 +2,7 @@
 from __future__ import annotations
 import json
 from datetime import datetime, timedelta, timezone
-from typing import Any
+from typing import Any\nfrom collections import defaultdict, deque
 from sqlalchemy.orm import Session
 from server.config import settings
 from server.models import ScanSnapshot
