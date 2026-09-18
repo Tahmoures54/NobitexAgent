@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Privacy Policy — CryptoScanner</title>
+<link rel="icon" href="/assets/eagle.png" type="image/png" />
+<link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/" class="nav-brand"><span style="font-size:22px;">🦅</span><span>CryptoScanner</span></a>
+  <div class="nav-links">
+    <a href="/" class="nav-link">Scanner</a>
+    <a href="/pricing.html" class="nav-link">Pricing</a>
+  </div>
+</nav>
+
+<main class="max-w-3xl mx-auto p-4 md:p-8 fade-in" style="color:var(--text-secondary);">
+  <h1 class="text-3xl font-bold mb-2" style="color:var(--text-primary);">Privacy Policy</h1>
+  <p class="text-xs mb-8" style="color:var(--text-muted);">
+    Last updated: <span id="year"></span>
+  </p>
+
+  <div class="panel space-y-6" style="padding:28px;">
+
+    <section>
+      <h2 class="text-lg font-semibold mb-2" style="color:var(--text-primary);">
+        1. Data We Collect
+      </h2>
+      <ul class="list-disc list-inside space-y-1">
+        <li>Email address (for account identification)</li>
+        <li>Hashed password (bcrypt, never stored in plaintext)</li>
+        <li>Paper trading activity on your account</li>
+        <li>Basic technical logs (IP, user-agent) for security</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold mb-2" style="color:var(--text-primary);">
+        2. What We Do NOT Collect
+      </h2>
+      <ul class="list-disc list-inside space-y-1">
+        <li>We do not collect your real exchange API keys.</li>
+        <li>We do not access your crypto wallets.</li>
+        <li>We do not run KYC or request identity documents.</li>
+      </ul>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold mb-2" style="color:var(--text-primary);">
+        3. How We Use Data
+      </h2>
+      <p>Your data is used solely to operate the Service: authenticate you,
+      track your paper trades, enforce plan quotas, and protect the platform
+      from abuse. We do not sell your data.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold mb-2" style="color:var(--text-primary);">
+        4. Cookies &amp; Local Storage
+      </h2>
+      <p>We use browser <strong>localStorage</strong> to store your login
+      token and user preferences. No third-party tracking cookies are used.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold mb-2" style="color:var(--text-primary);">
+        5. Data Retention
+      </h2>
+      <p>Account data is retained while your account is active. You may
+      request deletion at any time by contacting support.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold mb-2" style="color:var(--text-primary);">
+        6. Security
+      </h2>
+      <p>Passwords are hashed with bcrypt. Sessions use signed JWTs. Sensitive
+      operations are audit-logged. However, no system is 100% secure — use a
+      unique password.</p>
+    </section>
+
+    <section>
+      <h2 class="text-lg font-semibold mb-2" style="color:var(--text-primary);">
+        7. Contact
+      </h2>
+      <p>Questions? <a href="mailto:support@example.com">support@example.com</a></p>
+    </section>
+  </div>
+
+  <p class="text-xs text-center mt-8">
+    <a href="/">← Back to home</a>
+  </p>
+</main>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

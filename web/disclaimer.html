@@ -1,0 +1,84 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Disclaimer — CryptoScanner</title>
+<link rel="icon" href="/assets/eagle.png" type="image/png" />
+<link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+<script src="https://cdn.tailwindcss.com"></script>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/" class="nav-brand"><span style="font-size:22px;">🦅</span><span>CryptoScanner</span></a>
+  <div class="nav-links">
+    <a href="/" class="nav-link">Scanner</a>
+    <a href="/pricing.html" class="nav-link">Pricing</a>
+  </div>
+</nav>
+
+<main class="max-w-3xl mx-auto p-4 md:p-8 fade-in">
+
+  <div class="panel" style="padding:32px; border-left:4px solid var(--warning);">
+    <h1 class="text-2xl font-bold mb-4">⚠️ Financial Disclaimer</h1>
+
+    <p class="mb-4" style="color:var(--text-secondary); font-size:15px;">
+      <strong style="color:var(--text-primary);">CryptoScanner is NOT a financial advisor.</strong>
+      All content, signals, scores, indicators, and simulated results are
+      provided for <em>educational and informational purposes only</em>.
+    </p>
+
+    <p class="mb-4" style="color:var(--text-secondary); font-size:15px;">
+      Cryptocurrency trading carries substantial risk of loss. Prices can move
+      rapidly and unpredictably. You may lose some or all of your invested
+      capital.
+    </p>
+
+    <p class="mb-4" style="color:var(--text-secondary); font-size:15px;">
+      <strong style="color:var(--text-primary);">No guarantees.</strong>
+      Past performance — including our own backtests, simulated paper trades,
+      or historical win rates — does not predict future results. Any "win
+      rate" or "probability" shown is statistical and does not represent a
+      promise of profit.
+    </p>
+
+    <p class="mb-4" style="color:var(--text-secondary); font-size:15px;">
+      <strong style="color:var(--text-primary);">You are responsible.</strong>
+      Every trading decision you make using the Service is your own. Before
+      using real money, consult a licensed financial advisor if needed and
+      never invest more than you can afford to lose.
+    </p>
+
+    <p class="mb-4" style="color:var(--text-secondary); font-size:15px;">
+      <strong style="color:var(--text-primary);">No liability.</strong>
+      CryptoScanner and its operators assume no responsibility for any trading
+      losses, missed opportunities, or other damages arising from the use of
+      this Service.
+    </p>
+
+    <hr style="border:none; border-top:1px solid var(--border); margin:24px 0;" />
+
+    <p class="text-sm" style="color:var(--text-muted);">
+      By using CryptoScanner, you acknowledge and accept this disclaimer in
+      full. If you do not agree, please stop using the Service immediately.
+    </p>
+
+    <p class="text-xs mt-6" style="color:var(--text-muted);">
+      Last updated: <span id="year"></span>
+    </p>
+  </div>
+
+  <p class="text-xs text-center mt-8">
+    <a href="/">← Back to home</a> · 
+    <a href="/terms.html">Terms</a> · 
+    <a href="/privacy.html">Privacy</a>
+  </p>
+</main>
+
+<script>
+  document.getElementById('year').textContent = new Date().getFullYear();
+</script>
+</body>
+</html>

@@ -1,0 +1,342 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Paper Trading — CryptoScanner</title>
+<link rel="icon" href="/assets/eagle.png" type="image/png" />
+<link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/" class="nav-brand"><span style="font-size:22px;">🦅</span><span>CryptoScanner</span></a>
+  <div class="nav-links">
+    <a href="/" class="nav-link">Scanner</a>
+    <a href="/dashboard.html" class="nav-link">Dashboard</a>
+    <a href="/paper.html" class="nav-link active">Paper</a>
+    <a href="/pricing.html" class="nav-link">Pricing</a>
+    <a href="#" class="nav-link" onclick="Auth.logout(); return false;">Logout</a>
+  </div>
+</nav>
+
+<main x-data="paperApp()" x-init="init()" class="max-w-[1400px] mx-auto p-4 md:p-6 fade-in">
+
+  <div class="flex items-center justify-between mb-4">
+    <h1 class="text-xl md:text-2xl font-bold">Paper Trading</h1>
+    <button @click="loadAll()" class="btn btn-ghost btn-sm">🔄 Refresh</button>
+  </div>
+
+  <!-- Stats -->
+  <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-6">
+    <div class="panel" style="padding:14px;">
+      <div class="text-xs" style="color:var(--text-muted);">Total</div>
+      <div class="text-xl font-bold" x-text="stats.total_trades ?? 0"></div>
+    </div>
+    <div class="panel" style="padding:14px;">
+      <div class="text-xs" style="color:var(--text-muted);">Open</div>
+      <div class="text-xl font-bold" style="color:var(--info);"
+           x-text="stats.open_trades ?? 0"></div>
+    </div>
+    <div class="panel" style="padding:14px;">
+      <div class="text-xs" style="color:var(--text-muted);">Win Rate</div>
+      <div class="text-xl font-bold"
+           :class="(stats.win_rate ?? 0) >= 50 ? 'text-up' : 'text-down'"
+           x-text="(stats.win_rate ?? 0) + '%'"></div>
+    </div>
+    <div class="panel" style="padding:14px;">
+      <div class="text-xs" style="color:var(--text-muted);">Total P&L</div>
+      <div class="text-xl font-bold" :class="Fmt.colorClass(stats.total_pnl_usd)"
+           x-text="Fmt.usdSigned(stats.total_pnl_usd)"></div>
+    </div>
+    <div class="panel" style="padding:14px;">
+      <div class="text-xs" style="color:var(--text-muted);">Avg P&L %</div>
+      <div class="text-xl font-bold" :class="Fmt.colorClass(stats.avg_pnl_pct)"
+           x-text="Fmt.pct(stats.avg_pnl_pct)"></div>
+    </div>
+  </div>
+
+  <!-- New trade form -->
+  <div class="panel mb-6">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="panel-title" style="margin:0;">New Paper Trade</h2>
+      <span x-show="prefilled" x-cloak class="badge badge-buy">
+        Prefilled from scanner
+      </span>
+    </div>
+    <div class="grid grid-cols-2 md:grid-cols-6 gap-3">
+      <div class="md:col-span-1">
+        <label class="block text-xs mb-1" style="color:var(--text-secondary);">Symbol</label>
+        <input x-model="form.symbol" type="text" placeholder="BTC"
+               class="input" style="text-transform:uppercase;" />
+      </div>
+      <div class="md:col-span-1">
+        <label class="block text-xs mb-1" style="color:var(--text-secondary);">Side</label>
+        <select x-model="form.side" class="input">
+          <option value="long">Long</option>
+          <option value="short">Short</option>
+        </select>
+      </div>
+      <div class="md:col-span-1">
+        <label class="block text-xs mb-1" style="color:var(--text-secondary);">Entry Price</label>
+        <input x-model.number="form.price" type="number" step="any" min="0"
+               placeholder="0.00" class="input" />
+      </div>
+      <div class="md:col-span-1">
+        <label class="block text-xs mb-1" style="color:var(--text-secondary);">Size (USD)</label>
+        <input x-model.number="form.size_usd" type="number" step="any" min="1"
+               placeholder="100" class="input" />
+      </div>
+      <div class="md:col-span-1">
+        <label class="block text-xs mb-1" style="color:var(--text-secondary);">Stop Loss %</label>
+        <input x-model.number="form.stop_loss_pct" type="number" step="0.1" min="0.1"
+               placeholder="2.0" class="input" />
+      </div>
+      <div class="md:col-span-1">
+        <label class="block text-xs mb-1" style="color:var(--text-secondary);">Take Profit %</label>
+        <input x-model.number="form.take_profit_pct" type="number" step="0.1" min="0.1"
+               placeholder="6.0" class="input" />
+      </div>
+    </div>
+    <div class="flex items-center gap-2 mt-3">
+      <button @click="openTrade()" :disabled="busy || !formValid"
+              class="btn btn-primary">
+        <span x-show="!busy">Open Trade</span>
+        <span x-show="busy">Opening…</span>
+      </button>
+      <button @click="resetForm()" class="btn btn-ghost">Reset</button>
+      <span class="text-xs" style="color:var(--text-muted);">
+        Simulated position — no real money involved.
+      </span>
+    </div>
+  </div>
+
+  <!-- Open positions -->
+  <div class="panel mb-6" style="padding:0; overflow:hidden;">
+    <div class="flex items-center justify-between px-4 py-3"
+         style="border-bottom:1px solid var(--border);">
+      <h2 class="panel-title" style="margin:0;">
+        Open Positions
+        <span class="badge badge-buy ml-2" x-text="openTrades.length"></span>
+      </h2>
+    </div>
+    <div style="overflow:auto;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Side</th>
+            <th class="text-right">Entry</th>
+            <th class="text-right">Size</th>
+            <th class="text-right">Notional</th>
+            <th class="text-right">SL</th>
+            <th class="text-right">TP</th>
+            <th>Entry Time</th>
+            <th class="text-center">Close</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="t in openTrades" :key="t.id">
+            <tr>
+              <td class="font-semibold" x-text="t.symbol"></td>
+              <td class="text-xs" x-text="t.side.toUpperCase()"></td>
+              <td class="text-right mono" x-text="Fmt.price(t.entry_price)"></td>
+              <td class="text-right mono" x-text="Number(t.position_size).toFixed(6)"></td>
+              <td class="text-right mono" x-text="Fmt.usd(t.notional)"></td>
+              <td class="text-right mono text-down"
+                  x-text="t.stop_loss != null ? Fmt.price(t.stop_loss) : '—'"></td>
+              <td class="text-right mono text-up"
+                  x-text="t.take_profit != null ? Fmt.price(t.take_profit) : '—'"></td>
+              <td class="text-xs" style="color:var(--text-muted);"
+                  x-text="Fmt.datetime(t.entry_time)"></td>
+              <td class="text-center">
+                <button @click="closeTrade(t)" class="btn btn-danger btn-sm">Close</button>
+              </td>
+            </tr>
+          </template>
+          <tr x-show="openTrades.length === 0">
+            <td colspan="9" class="text-center py-6" style="color:var(--text-muted);">
+              No open positions.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <!-- Closed positions -->
+  <div class="panel" style="padding:0; overflow:hidden;">
+    <div class="flex items-center justify-between px-4 py-3"
+         style="border-bottom:1px solid var(--border);">
+      <h2 class="panel-title" style="margin:0;">
+        Closed Trades
+        <span class="badge badge-neutral ml-2" x-text="closedTrades.length"></span>
+      </h2>
+    </div>
+    <div style="overflow:auto; max-height:60vh;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Side</th>
+            <th class="text-right">Entry</th>
+            <th class="text-right">Exit</th>
+            <th class="text-right">P&L %</th>
+            <th class="text-right">P&L $</th>
+            <th>Reason</th>
+            <th>Exit Time</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="t in closedTrades" :key="t.id">
+            <tr>
+              <td class="font-semibold" x-text="t.symbol"></td>
+              <td class="text-xs" x-text="t.side.toUpperCase()"></td>
+              <td class="text-right mono" x-text="Fmt.price(t.entry_price)"></td>
+              <td class="text-right mono" x-text="Fmt.price(t.exit_price)"></td>
+              <td class="text-right mono" :class="Fmt.colorClass(t.pnl_pct)"
+                  x-text="Fmt.pct(t.pnl_pct)"></td>
+              <td class="text-right mono" :class="Fmt.colorClass(t.pnl_usd)"
+                  x-text="Fmt.usdSigned(t.pnl_usd)"></td>
+              <td class="text-xs" x-text="t.exit_reason || '—'"></td>
+              <td class="text-xs" style="color:var(--text-muted);"
+                  x-text="Fmt.datetime(t.exit_time)"></td>
+            </tr>
+          </template>
+          <tr x-show="closedTrades.length === 0">
+            <td colspan="8" class="text-center py-6" style="color:var(--text-muted);">
+              No closed trades yet.
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script src="/app.js"></script>
+<script>
+  function paperApp() {
+    return {
+      Fmt,
+      trades: [],
+      stats: {},
+      busy: false,
+      prefilled: false,
+      form: {
+        symbol: '',
+        side: 'long',
+        price: 0,
+        size_usd: 100,
+        stop_loss_pct: 2.0,
+        take_profit_pct: 6.0,
+      },
+
+      get openTrades()   { return this.trades.filter(t => t.status === 'open'); },
+      get closedTrades() { return this.trades.filter(t => t.status === 'closed'); },
+
+      get formValid() {
+        return this.form.symbol.trim() &&
+               this.form.price > 0 &&
+               this.form.size_usd >= 1 &&
+               this.form.stop_loss_pct > 0 &&
+               this.form.take_profit_pct > 0;
+      },
+
+      async init() {
+        if (!Auth.requireLogin()) return;
+
+        // Prefill from scanner
+        const pending = localStorage.getItem('cs_pending_trade');
+        if (pending) {
+          try {
+            const p = JSON.parse(pending);
+            this.form.symbol = (p.symbol || '').toUpperCase();
+            this.form.price  = Number(p.price) || 0;
+            this.prefilled = true;
+          } catch {}
+          localStorage.removeItem('cs_pending_trade');
+        }
+
+        await this.loadAll();
+        setInterval(() => this.loadAll(), 15000); // auto-refresh every 15s
+      },
+
+      async loadAll() {
+        try {
+          const [list, stats] = await Promise.all([
+            API.paper.list(),
+            API.paper.stats(),
+          ]);
+          this.trades = list || [];
+          this.stats = stats || {};
+        } catch (err) {
+          if (err.status === 401) { Auth.logout(); return; }
+          console.error('Load failed', err);
+        }
+      },
+
+      async openTrade() {
+        if (!this.formValid) return;
+        this.busy = true;
+        try {
+          await API.paper.open({
+            symbol:           this.form.symbol.trim().toUpperCase(),
+            side:             this.form.side,
+            price:            Number(this.form.price),
+            size_usd:         Number(this.form.size_usd),
+            stop_loss_pct:    Number(this.form.stop_loss_pct),
+            take_profit_pct:  Number(this.form.take_profit_pct),
+          });
+          UI.success('Trade opened');
+          this.resetForm();
+          await this.loadAll();
+        } catch (err) {
+          UI.error(err.message || 'Could not open trade');
+        } finally {
+          this.busy = false;
+        }
+      },
+
+      async closeTrade(trade) {
+        const suggested = trade.take_profit != null ? trade.take_profit
+                        : trade.entry_price;
+        const raw = window.prompt(
+          `Exit price for ${trade.symbol} (entry ${Fmt.price(trade.entry_price)}):`,
+          String(suggested)
+        );
+        if (raw == null) return;
+        const price = Number(raw);
+        if (!isFinite(price) || price <= 0) {
+          UI.error('Invalid price');
+          return;
+        }
+        try {
+          await API.paper.close(trade.id, price, 'Manual');
+          UI.success('Trade closed');
+          await this.loadAll();
+        } catch (err) {
+          UI.error(err.message || 'Could not close trade');
+        }
+      },
+
+      resetForm() {
+        this.form = {
+          symbol: '',
+          side: 'long',
+          price: 0,
+          size_usd: 100,
+          stop_loss_pct: 2.0,
+          take_profit_pct: 6.0,
+        };
+        this.prefilled = false;
+      },
+    };
+  }
+  window.paperApp = paperApp;
+</script>
+</body>
+</html>

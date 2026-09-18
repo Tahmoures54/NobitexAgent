@@ -1,0 +1,109 @@
+# ══════════════════════════════════════════════════════════════
+# CryptoScanner Web — git ignore rules
+# ══════════════════════════════════════════════════════════════
+
+# ── Python ──────────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+MANIFEST
+
+# ── Virtual environments ────────────────────────────────────
+.venv/
+venv/
+ENV/
+env/
+.env/
+.conda/
+
+# ── Environment / secrets ───────────────────────────────────
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+secrets/
+
+# ── Database ────────────────────────────────────────────────
+data/*.db
+data/*.db-wal
+data/*.db-shm
+data/*.sqlite
+data/*.sqlite3
+data/cache/*
+data/snapshots/*
+!data/.gitkeep
+!data/cache/.gitkeep
+!data/snapshots/.gitkeep
+
+# ── Logs ────────────────────────────────────────────────────
+logs/*
+!logs/.gitkeep
+*.log
+
+# ── Testing ─────────────────────────────────────────────────
+.pytest_cache/
+.pytest_tmp/
+.pytest_cache_disabled/
+.coverage
+.coverage.*
+htmlcov/
+.tox/
+.nox/
+coverage.xml
+*.cover
+
+# ── Type checkers / linters ─────────────────────────────────
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.ruff_cache/
+.pytype/
+
+# ── IDE / Editors ───────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+*~
+.project
+.pydevproject
+
+# ── OS junk ─────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Desktop.ini
+$RECYCLE.BIN/
+
+# ── Build artifacts ─────────────────────────────────────────
+*.spec
+*.manifest
+app_icon.ico.bak
+eagle.png.bak
+
+# ── Personal / scratch ──────────────────────────────────────
+notes.txt
+scratch/
+todo.md
+*.local
+
+# ── Desktop-era leftovers (never used by the web build) ─────
+archive/
+desktop_old/

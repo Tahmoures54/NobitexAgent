@@ -1,0 +1,193 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>Dashboard — CryptoScanner</title>
+<link rel="icon" href="/assets/eagle.png" type="image/png" />
+<link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<nav class="nav">
+  <a href="/" class="nav-brand"><span style="font-size:22px;">🦅</span><span>CryptoScanner</span></a>
+  <div class="nav-links">
+    <a href="/" class="nav-link">Scanner</a>
+    <a href="/dashboard.html" class="nav-link active">Dashboard</a>
+    <a href="/paper.html" class="nav-link">Paper</a>
+    <a href="/pricing.html" class="nav-link">Pricing</a>
+    <a href="#" class="nav-link" onclick="Auth.logout(); return false;">Logout</a>
+  </div>
+</nav>
+
+<main x-data="dashboardApp()" x-init="init()" class="max-w-6xl mx-auto p-4 md:p-6 fade-in">
+
+  <!-- Welcome -->
+  <div class="mb-6">
+    <h1 class="text-2xl font-bold">
+      Welcome back<span x-show="user?.email" x-text="', ' + user.email.split('@')[0]"></span>
+    </h1>
+    <p class="text-sm" style="color:var(--text-muted);">
+      Plan: <span class="font-semibold" :style="planStyle" x-text="planLabel"></span>
+      <span x-show="user?.plan_expires_at"
+            x-text="' • expires ' + Fmt.datetime(user.plan_expires_at, {year:'numeric', month:'short', day:'numeric'})"></span>
+    </p>
+  </div>
+
+  <!-- Paper trading stats -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-6">
+    <div class="panel" style="padding:16px;">
+      <div class="text-xs" style="color:var(--text-muted);">Total Trades</div>
+      <div class="text-2xl font-bold" x-text="stats.total_trades ?? '—'"></div>
+    </div>
+    <div class="panel" style="padding:16px;">
+      <div class="text-xs" style="color:var(--text-muted);">Win Rate</div>
+      <div class="text-2xl font-bold"
+           :class="(stats.win_rate ?? 0) >= 50 ? 'text-up' : 'text-down'"
+           x-text="(stats.win_rate != null ? stats.win_rate.toFixed(1) + '%' : '—')"></div>
+    </div>
+    <div class="panel" style="padding:16px;">
+      <div class="text-xs" style="color:var(--text-muted);">Total P&L</div>
+      <div class="text-2xl font-bold"
+           :class="Fmt.colorClass(stats.total_pnl_usd)"
+           x-text="Fmt.usdSigned(stats.total_pnl_usd)"></div>
+    </div>
+    <div class="panel" style="padding:16px;">
+      <div class="text-xs" style="color:var(--text-muted);">Open Trades</div>
+      <div class="text-2xl font-bold" style="color:var(--info);"
+           x-text="stats.open_trades ?? '—'"></div>
+    </div>
+  </div>
+
+  <!-- Quick actions -->
+  <div class="grid grid-cols-1 md:grid-cols-3 gap-4 mb-6">
+    <a href="/" class="panel hover:border-[--primary] transition"
+       style="cursor:pointer; display:block;">
+      <div style="font-size:28px;">🔍</div>
+      <div class="font-semibold mt-2">Live Scanner</div>
+      <div class="text-xs mt-1" style="color:var(--text-muted);">
+        Fresh signals across hundreds of coins
+      </div>
+    </a>
+    <a href="/paper.html" class="panel hover:border-[--primary] transition"
+       style="cursor:pointer; display:block;">
+      <div style="font-size:28px;">📄</div>
+      <div class="font-semibold mt-2">Paper Trading</div>
+      <div class="text-xs mt-1" style="color:var(--text-muted);">
+        Practice with simulated positions
+      </div>
+    </a>
+    <a href="/pricing.html" class="panel hover:border-[--primary] transition"
+       style="cursor:pointer; display:block;">
+      <div style="font-size:28px;">⭐</div>
+      <div class="font-semibold mt-2">Upgrade to Pro</div>
+      <div class="text-xs mt-1" style="color:var(--text-muted);">
+        Unlimited scans, AI Win Rate, alerts
+      </div>
+    </a>
+  </div>
+
+  <!-- Recent paper trades -->
+  <div class="panel">
+    <div class="flex items-center justify-between mb-3">
+      <h2 class="panel-title" style="margin:0;">Recent Paper Trades</h2>
+      <a href="/paper.html" class="text-xs">View all →</a>
+    </div>
+    <div style="overflow:auto;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th>Symbol</th>
+            <th>Side</th>
+            <th class="text-right">Entry</th>
+            <th class="text-right">Exit</th>
+            <th class="text-right">P&L</th>
+            <th>Status</th>
+            <th>When</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="t in recentTrades" :key="t.id">
+            <tr>
+              <td class="font-semibold" x-text="t.symbol"></td>
+              <td class="text-xs" x-text="t.side.toUpperCase()"></td>
+              <td class="text-right mono" x-text="Fmt.price(t.entry_price)"></td>
+              <td class="text-right mono"
+                  x-text="t.exit_price != null ? Fmt.price(t.exit_price) : '—'"></td>
+              <td class="text-right mono" :class="Fmt.colorClass(t.pnl_pct)"
+                  x-text="t.pnl_pct != null ? Fmt.pct(t.pnl_pct) : '—'"></td>
+              <td>
+                <span :class="t.status === 'open' ? 'badge badge-buy' : 'badge badge-neutral'"
+                      x-text="t.status"></span>
+              </td>
+              <td class="text-xs" style="color:var(--text-muted);"
+                  x-text="Fmt.datetime(t.entry_time)"></td>
+            </tr>
+          </template>
+          <tr x-show="recentTrades.length === 0">
+            <td colspan="7" class="text-center py-6" style="color:var(--text-muted);">
+              No paper trades yet.
+              <a href="/paper.html" class="ml-1">Open one →</a>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</main>
+
+<script src="/app.js"></script>
+<script>
+  function dashboardApp() {
+    return {
+      Fmt,
+      user: Auth.getUser(),
+      stats: {},
+      recentTrades: [],
+
+      get planLabel() {
+        const p = (this.user?.plan || 'free').toLowerCase();
+        if (p === 'pro')      return 'Pro';
+        if (p === 'lifetime') return 'Lifetime';
+        return 'Free';
+      },
+      get planStyle() {
+        const p = (this.user?.plan || 'free').toLowerCase();
+        if (p === 'pro')      return 'color: var(--primary);';
+        if (p === 'lifetime') return 'color: #D4AF37;';
+        return 'color: var(--text-muted);';
+      },
+
+      async init() {
+        if (!Auth.requireLogin()) return;
+        // Refresh user info from server
+        try {
+          const me = await API.auth.me();
+          Auth.setSession(Auth.getToken(), me);
+          this.user = me;
+        } catch (err) {
+          if (err.status === 401) Auth.logout();
+        }
+        await Promise.all([this.loadStats(), this.loadTrades()]);
+      },
+
+      async loadStats() {
+        try { this.stats = await API.paper.stats(); }
+        catch (err) { console.warn('stats failed', err); }
+      },
+
+      async loadTrades() {
+        try {
+          const all = await API.paper.list();
+          this.recentTrades = (all || []).slice(0, 8);
+        } catch (err) { console.warn('list failed', err); }
+      },
+    };
+  }
+  window.dashboardApp = dashboardApp;
+</script>
+</body>
+</html>

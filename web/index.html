@@ -1,0 +1,278 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8" />
+<meta name="viewport" content="width=device-width, initial-scale=1.0" />
+<title>CryptoScanner — Live Signals</title>
+<meta name="description" content="Free crypto scanner with real-time signals, technical indicators, and paper trading." />
+<link rel="icon" href="/assets/eagle.png" type="image/png" />
+<link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
+<script src="https://cdn.tailwindcss.com"></script>
+<script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+<link rel="stylesheet" href="/style.css" />
+</head>
+<body>
+
+<!-- ═══ Nav ═══ -->
+<nav class="nav">
+  <a href="/" class="nav-brand">
+    <span style="font-size:22px;">🦅</span>
+    <span>CryptoScanner</span>
+  </a>
+  <div class="nav-links">
+    <a href="/" class="nav-link active">Scanner</a>
+    <a href="/paper.html" class="nav-link">Paper</a>
+    <a href="/pricing.html" class="nav-link">Pricing</a>
+    <span id="nav-auth-slot"></span>
+  </div>
+</nav>
+
+<!-- ═══ Scanner ═══ -->
+<main x-data="scannerApp()" x-init="init()" class="max-w-[1400px] mx-auto p-4 md:p-6 fade-in">
+
+  <!-- Header row -->
+  <div class="flex flex-wrap items-center justify-between gap-3 mb-4">
+    <div>
+      <h1 class="text-xl md:text-2xl font-bold">Live Signals</h1>
+      <p class="text-xs" style="color:var(--text-muted);">
+        <span class="pulse-dot mr-1"></span>
+        <span x-text="updatedAgo"></span>
+        <span> • </span>
+        <span x-text="rows.length"></span> coins
+        <span x-show="source"> • </span>
+        <span x-show="source" x-text="source"></span>
+      </p>
+    </div>
+    <div class="flex items-center gap-2">
+      <input x-model="query" type="text" placeholder="Search symbol…"
+             class="input" style="width:200px;" />
+      <button @click="refresh()" :disabled="loading" class="btn btn-primary">
+        <span x-show="!loading">🔄 Refresh</span>
+        <span x-show="loading">⏳ Scanning…</span>
+      </button>
+    </div>
+  </div>
+
+  <!-- Signal filter -->
+  <div class="flex flex-wrap gap-2 mb-4">
+    <template x-for="s in signals" :key="s">
+      <button @click="filter = s"
+              :class="filter === s ? 'btn btn-primary btn-sm' : 'btn btn-ghost btn-sm'"
+              x-text="s"></button>
+    </template>
+  </div>
+
+  <!-- Stats row -->
+  <div class="grid grid-cols-2 md:grid-cols-4 gap-3 mb-4">
+    <div class="panel" style="padding:12px;">
+      <div class="text-xs" style="color:var(--text-muted);">Strong Buys</div>
+      <div class="text-2xl font-bold text-up" x-text="counts.strongBuy"></div>
+    </div>
+    <div class="panel" style="padding:12px;">
+      <div class="text-xs" style="color:var(--text-muted);">Buys</div>
+      <div class="text-2xl font-bold text-up" x-text="counts.buy"></div>
+    </div>
+    <div class="panel" style="padding:12px;">
+      <div class="text-xs" style="color:var(--text-muted);">Sells</div>
+      <div class="text-2xl font-bold text-down" x-text="counts.sell"></div>
+    </div>
+    <div class="panel" style="padding:12px;">
+      <div class="text-xs" style="color:var(--text-muted);">Neutral</div>
+      <div class="text-2xl font-bold" x-text="counts.neutral"></div>
+    </div>
+  </div>
+
+  <!-- Table -->
+  <div class="panel" style="padding:0; overflow:hidden;">
+    <div style="overflow:auto; max-height:70vh;">
+      <table class="table">
+        <thead>
+          <tr>
+            <th style="text-align:left;">Symbol</th>
+            <th style="text-align:right;">Price</th>
+            <th style="text-align:right;">1h %</th>
+            <th style="text-align:right;">24h %</th>
+            <th style="text-align:right;">7d %</th>
+            <th style="text-align:right;">RSI</th>
+            <th style="text-align:right;">Volume</th>
+            <th style="text-align:right;">Mkt Cap</th>
+            <th style="text-align:center;">Signal</th>
+            <th style="text-align:right;">Score</th>
+            <th style="text-align:center;">Risk</th>
+            <th style="text-align:center;">Trade</th>
+          </tr>
+        </thead>
+        <tbody>
+          <template x-for="r in filtered" :key="r.Symbol + '-' + r.Price">
+            <tr>
+              <td>
+                <div class="font-semibold" x-text="r.Symbol"></div>
+                <div class="text-xs" style="color:var(--text-muted);"
+                     x-text="r.Name"></div>
+              </td>
+              <td class="text-right mono" x-text="Fmt.price(r.Price)"></td>
+              <td class="text-right mono" :class="Fmt.colorClass(r['1h Change (%)'])"
+                  x-text="Fmt.pct(r['1h Change (%)'])"></td>
+              <td class="text-right mono" :class="Fmt.colorClass(r['24h Change (%)'])"
+                  x-text="Fmt.pct(r['24h Change (%)'])"></td>
+              <td class="text-right mono" :class="Fmt.colorClass(r['7d Change (%)'])"
+                  x-text="Fmt.pct(r['7d Change (%)'])"></td>
+              <td class="text-right mono"
+                  x-text="r.RSI != null ? Number(r.RSI).toFixed(1) : '—'"></td>
+              <td class="text-right mono" x-text="Fmt.compact(r.Volume)"></td>
+              <td class="text-right mono" x-text="Fmt.compact(r['Market Cap'])"></td>
+              <td class="text-center">
+                <span :class="Fmt.signalBadgeClass(r.Signal)"
+                      x-text="r.Signal || 'Neutral'"></span>
+              </td>
+              <td class="text-right mono"
+                  x-text="r.Score != null ? Number(r.Score).toFixed(1) : '—'"></td>
+              <td class="text-center">
+                <span :class="Fmt.riskBadgeClass(r.Risk)" x-text="r.Risk || '—'"></span>
+              </td>
+              <td class="text-center">
+                <button @click="openPaper(r)" class="btn btn-secondary btn-sm">
+                  Paper
+                </button>
+              </td>
+            </tr>
+          </template>
+          <tr x-show="filtered.length === 0">
+            <td colspan="12" class="text-center py-8" style="color:var(--text-muted);">
+              <span x-show="!rows.length">No data yet. Click <strong>Refresh</strong> to run a scan.</span>
+              <span x-show="rows.length && filtered.length === 0">No matching results.</span>
+            </td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+
+  <p class="text-xs text-center mt-4" style="color:var(--text-muted);">
+    Data is delayed by a few seconds. Not financial advice — trade at your own risk.
+  </p>
+</main>
+
+<!-- ═══ Auth slot ═══ -->
+<script src="/app.js"></script>
+<script>
+  // Render auth state in nav
+  (function () {
+    const slot = document.getElementById('nav-auth-slot');
+    const user = Auth.getUser();
+    if (Auth.isLoggedIn() && user) {
+      slot.innerHTML = `
+        <a href="/dashboard.html" class="nav-link">Dashboard</a>
+        <a href="#" class="nav-link" id="logout-btn">Logout</a>
+      `;
+      document.getElementById('logout-btn').addEventListener('click', (e) => {
+        e.preventDefault();
+        Auth.logout();
+      });
+    } else {
+      slot.innerHTML = `<a href="/login.html" class="btn btn-primary btn-sm">Sign in</a>`;
+    }
+  })();
+
+  // ── Alpine component ──
+  function scannerApp() {
+    return {
+      rows: [],
+      updatedAt: 0,
+      updatedAgo: '—',
+      loading: false,
+      query: '',
+      filter: 'All',
+      source: null,
+      signals: ['All', 'Strong Buy', 'Buy Signal', 'Neutral', 'Sell Signal', 'Strong Sell'],
+
+      get filtered() {
+        const q = this.query.trim().toLowerCase();
+        return this.rows.filter(r => {
+          if (this.filter !== 'All' && r.Signal !== this.filter) return false;
+          if (q) {
+            const sym  = (r.Symbol || '').toLowerCase();
+            const name = (r.Name   || '').toLowerCase();
+            if (!sym.includes(q) && !name.includes(q)) return false;
+          }
+          return true;
+        });
+      },
+
+      get counts() {
+        const c = { strongBuy: 0, buy: 0, sell: 0, neutral: 0 };
+        for (const r of this.rows) {
+          const s = (r.Signal || '').toLowerCase();
+          if (s === 'strong buy')       c.strongBuy++;
+          else if (s === 'buy signal')  c.buy++;
+          else if (s === 'sell signal' || s === 'strong sell') c.sell++;
+          else                          c.neutral++;
+        }
+        return c;
+      },
+
+      // Make Fmt available inside template
+      Fmt,
+
+      async init() {
+        await this.load();
+        this.tick();
+        setInterval(() => this.tick(),    1000);
+        setInterval(() => this.load(),    60000);
+      },
+
+      async load() {
+        try {
+          const data = await API.scan.cached();
+          this.rows = data.rows || [];
+          this.updatedAt = data.updated_at || 0;
+          this.source = data.source || null;
+        } catch (err) {
+          console.error('Scan load failed:', err);
+        }
+      },
+
+      async refresh() {
+        if (this.loading) return;
+        this.loading = true;
+        try {
+          await API.scan.refresh();
+          await this.load();
+          UI.success(`Scan updated (${this.rows.length} coins)`);
+        } catch (err) {
+          if (err.status === 429) {
+            UI.warn(err.message || 'Daily scan limit reached.');
+          } else {
+            UI.error(err.message || 'Scan failed.');
+          }
+        } finally {
+          this.loading = false;
+        }
+      },
+
+      tick() {
+        if (!this.updatedAt) { this.updatedAgo = '—'; return; }
+        const s = Math.floor(Date.now() / 1000 - this.updatedAt);
+        this.updatedAgo = s < 60
+          ? `${s}s ago`
+          : s < 3600
+            ? `${Math.floor(s / 60)}m ago`
+            : `${Math.floor(s / 3600)}h ago`;
+      },
+
+      openPaper(row) {
+        // Stash the row and redirect to /paper.html
+        localStorage.setItem('cs_pending_trade', JSON.stringify({
+          symbol: row.Symbol,
+          price:  row.Price,
+          signal: row.Signal,
+        }));
+        window.location.href = '/paper.html';
+      },
+    };
+  }
+
+  window.scannerApp = scannerApp;
+</script>
+</body>
+</html>

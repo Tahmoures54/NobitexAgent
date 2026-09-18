@@ -1,0 +1,89 @@
+NobitexAgent
+│
+├── server/                    ← 🆕 Backend (FastAPI)
+│   ├── __init__.py
+│   ├── main.py
+│   ├── config.py
+│   ├── database.py
+│   ├── models.py
+│   ├── schemas.py
+│   ├── auth.py
+│   ├── security.py
+│   ├── logging_config.py
+│   ├── scheduler.py
+│   │
+│   ├── services/
+│   │   ├── __init__.py
+│   │   ├── scanner.py
+│   │   ├── prices.py
+│   │   ├── paper.py
+│   │   ├── plans.py
+│   │   └── audit.py
+│   │
+│   └── routes/
+│       ├── __init__.py
+│       ├── health.py
+│       ├── auth.py
+│       ├── scan.py
+│       ├── paper.py
+│       └── admin.py
+│
+├── analysis/                  ← ✅ دست‌نخورده (indicators, signals, risk)
+├── api/                       ← ✅ دست‌نخورده (coingecko, cmc, tronscan)
+├── core/                      ← ✅ دست‌نخورده (config, utils, encryption)
+├── trading/                   ← ✅ دست‌نخورده (nobitex, simulator, engines)
+│
+├── web/                       ← 🆕 Frontend (بدون build)
+│   ├── index.html
+│   ├── login.html
+│   ├── dashboard.html
+│   ├── paper.html
+│   ├── pricing.html
+│   ├── terms.html
+│   ├── privacy.html
+│   ├── disclaimer.html
+│   ├── app.js
+│   └── style.css
+│
+├── alembic/                   ← 🆕 Migrations
+│   ├── versions/
+│   │   └── .gitkeep
+│   ├── env.py
+│   └── script.py.mako
+│
+├── tests/                     ← 🔄 گسترش
+│   ├── __init__.py
+│   ├── conftest.py
+│   ├── test_auth.py
+│   ├── test_scan.py
+│   ├── test_paper.py
+│   ├── test_indicators.py     ← موجود
+│   ├── test_signals.py        ← موجود
+│   └── test_integration.py    ← موجود
+│
+├── scripts/                   ← 🆕 ابزار CLI
+│   ├── init_db.py
+│   ├── seed_admin.py
+│   └── health_check.py
+│
+├── data/
+│   ├── app.db                 ← dev DB
+│   ├── cache/
+│   ├── snapshots/
+│   └── .gitkeep
+│
+├── logs/
+│   ├── application.log
+│   ├── security.log
+│   ├── trading.log
+│   └── .gitkeep
+│
+├── .env
+├── .env.example
+├── .gitignore
+├── alembic.ini
+├── requirements.txt
+├── run.py                     ← 🆕 جایگزین main.py
+├── README.md
+├── LICENSE
+└── CHANGELOG.md
