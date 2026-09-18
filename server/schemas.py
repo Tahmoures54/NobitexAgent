@@ -62,8 +62,8 @@ class OpenTradeReq(BaseModel):
     side: Literal["long", "short"] = "long"
     price: float = Field(gt=0)
     size_usd: float = Field(gt=0, default=100.0, le=10_000_000)
-    stop_loss_pct: float = Field(gt=0, le=50, default=2.0)
-    take_profit_pct: float = Field(gt=0, le=200, default=6.0)
+    stop_loss_pct: float = Field(gt=0, le=50, default=3.0)
+    take_profit_pct: float = Field(gt=0, le=200, default=50.0)
     signal: Optional[str] = Field(default=None, max_length=64)
 
 
