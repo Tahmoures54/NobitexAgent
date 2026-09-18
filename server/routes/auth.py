@@ -63,6 +63,7 @@ def provider_login(request: Request, req: ProviderTokenReq, db: Session = Depend
         User.auth_provider == provider,
         User.auth_subject == subject,
     ).first()
+    is_new_user = user is None
 
     if user is None:
         existing = db.query(User).filter(User.email == email).first()
@@ -98,6 +99,12 @@ def provider_login(request: Request, req: ProviderTokenReq, db: Session = Depend
     db.commit()
     db.refresh(user)
 
+    if is_new_user:
+        audit.log_event(
+            db, user_id=user.id, event=audit.EV_REGISTER,
+            ip=client_ip(request), user_agent=client_ua(request),
+            details={"provider": provider},
+        )
     audit.log_event(
         db, user_id=user.id, event=audit.EV_LOGIN_OK,
         ip=client_ip(request), user_agent=client_ua(request),
