@@ -48,11 +48,11 @@ class Settings(BaseSettings):
 
     # ── Prices watcher (Paper SL/TP auto-close) ────────────
     prices_interval_seconds: int = 60
-    # Run APScheduler inside this process. Set false for the public web service
-    # when a dedicated worker service is used.
-    run_scheduler: bool = True
-    # Automatically create missing tables at startup. Production should use Alembic.
-    auto_create_db: bool = True
+    # The web service must not own background jobs. Enable this only in the
+    # dedicated worker process (for example RUN_SCHEDULER=true on Render).
+    run_scheduler: bool = False
+    # Schema creation is development-only. Hosted deployments use Alembic.
+    auto_create_db: bool = False
     # Optional shared rate-limit store (for multi-instance deployments).
     redis_url: str = ""
 
