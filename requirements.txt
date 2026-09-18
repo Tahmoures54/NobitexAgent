@@ -35,8 +35,8 @@ email-validator>=2.0.0
 sqlalchemy>=2.0.0
 alembic>=1.13.0
 
-# Postgres driver — uncomment when switching to Postgres.
-# psycopg2-binary>=2.9.9
+# Postgres driver — used by hosted production deployments.
+psycopg[binary]>=3.2.0,<4.0.0
 
 # ── Auth / crypto ───────────────────────────────────────────
 passlib[bcrypt]>=1.7.4
