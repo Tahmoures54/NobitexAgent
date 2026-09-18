@@ -30,6 +30,7 @@ from typing import Optional
 from sqlalchemy.orm import Session
 
 from server.models import Trade
+from server.config import settings
 from server.schemas import OpenTradeReq
 from server.services import audit
 
@@ -49,8 +50,18 @@ def open_trade(db: Session, user_id: int, req: OpenTradeReq) -> Trade:
     side = req.side.lower()
     entry = float(req.price)
 
-    position_size = req.size_usd / entry
-    notional = float(req.size_usd)
+    closed_pnl = sum((t.pnl_usd or 0.0) for t in db.query(Trade).filter(
+        Trade.user_id == user_id, Trade.status == "closed"
+    ).all())
+    open_notional = sum((t.notional or 0.0) for t in db.query(Trade).filter(
+        Trade.user_id == user_id, Trade.status == "open"
+    ).all())
+    available_cash = max(0.0, float(settings.paper_initial_cash) + closed_pnl - open_notional)
+    strategy_notional = available_cash * float(settings.paper_capital_usage_pct) / 100.0
+    notional = min(float(req.size_usd), strategy_notional)
+    if notional <= 0:
+        raise ValueError("Insufficient virtual paper cash for a new position.")
+    position_size = notional / entry
 
     if side == "long":
         sl = entry * (1.0 - req.stop_loss_pct / 100.0)
@@ -70,6 +81,10 @@ def open_trade(db: Session, user_id: int, req: OpenTradeReq) -> Trade:
         notional=notional,
         stop_loss=sl,
         take_profit=tp,
+        highest_price=entry if side == "long" else None,
+        lowest_price=entry if side == "short" else None,
+        trailing_stop=None,
+        trailing_active=False,
         status="open",
     )
     db.add(trade)
@@ -192,20 +207,39 @@ def check_exits(
         trigger_price: Optional[float] = None
         trigger_reason: Optional[str] = None
 
+        activation = float(settings.trailing_activation_pct)
+        distance = float(settings.trailing_distance_pct)
+
         if t.side == "long":
+            t.highest_price = max(float(t.highest_price or t.entry_price), current)
+            gain_pct = (t.highest_price - t.entry_price) / t.entry_price * 100.0
+            if gain_pct >= activation:
+                t.trailing_active = True
+                candidate = t.highest_price * (1.0 - distance / 100.0)
+                t.trailing_stop = max(float(t.trailing_stop or 0.0), candidate)
+                t.stop_loss = max(float(t.stop_loss or 0.0), t.trailing_stop)
             if t.stop_loss is not None and current <= t.stop_loss:
                 trigger_price = t.stop_loss
-                trigger_reason = "Stop Loss"
+                trigger_reason = "Trailing Stop" if t.trailing_active else "Stop Loss"
             elif t.take_profit is not None and current >= t.take_profit:
                 trigger_price = t.take_profit
                 trigger_reason = "Take Profit"
-        else:  # short
+        else:
+            t.lowest_price = min(float(t.lowest_price or t.entry_price), current)
+            gain_pct = (t.entry_price - t.lowest_price) / t.entry_price * 100.0
+            if gain_pct >= activation:
+                t.trailing_active = True
+                candidate = t.lowest_price * (1.0 + distance / 100.0)
+                t.trailing_stop = min(float(t.trailing_stop or float("inf")), candidate)
+                t.stop_loss = min(float(t.stop_loss or float("inf")), t.trailing_stop)
             if t.stop_loss is not None and current >= t.stop_loss:
                 trigger_price = t.stop_loss
-                trigger_reason = "Stop Loss"
+                trigger_reason = "Trailing Stop" if t.trailing_active else "Stop Loss"
             elif t.take_profit is not None and current <= t.take_profit:
                 trigger_price = t.take_profit
                 trigger_reason = "Take Profit"
+
+        db.flush()
 
         if trigger_price is None or trigger_reason is None:
             continue
