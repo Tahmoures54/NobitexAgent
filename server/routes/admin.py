@@ -96,7 +96,7 @@ def users(
         total=int(total),
         offset=offset,
         limit=limit,
-        items=[UserOut.model_validate(u) for u in rows],
+        items=[UserOut.from_user(u) for u in rows],
     )
 
 
@@ -181,7 +181,7 @@ def set_plan(
         admin.id, target.id, prev_plan, target.plan,
     )
 
-    return UserOut.model_validate(target)
+    return UserOut.from_user(target)
 
 
 # ══════════════════════════════════════════════════════════
