@@ -32,6 +32,13 @@ def main() -> None:
     signal.signal(signal.SIGINT, _stop)
 
     logger.info("NobitexAgent worker starting")
+    logger.info(
+        "Worker configuration | scan_interval=%dm | market_history=%s | retention=%dd | max_rows=%d",
+        settings.scan_interval_minutes,
+        settings.market_history_enabled,
+        settings.market_history_retention_days,
+        settings.market_history_max_rows_per_scan,
+    )
     start_scheduler()
 
     try:
