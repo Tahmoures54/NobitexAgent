@@ -8,61 +8,82 @@
 <link rel="stylesheet" href="https://rsms.me/inter/inter.css" />
 <script src="https://cdn.tailwindcss.com"></script>
 <script defer src="https://unpkg.com/alpinejs@3.13.5/dist/cdn.min.js"></script>
+<script src="https://accounts.google.com/gsi/client" async defer></script>
+<script src="https://alcdn.msauth.net/browser/2.35.0/js/msal-browser.min.js" defer></script>
 <link rel="stylesheet" href="/style.css" />
 </head>
 <body class="min-h-screen flex items-center justify-center p-4">
 
-<div x-data="authApp()" x-init="init()"
-     class="w-full max-w-md panel fade-in">
-
+<div x-data="authApp()" x-init="init()" class="w-full max-w-md panel fade-in">
   <div class="text-center mb-6">
     <div style="font-size:40px;">🦅</div>
     <h1 class="text-xl font-bold mt-2">CryptoScanner</h1>
-    <p class="text-xs" style="color:var(--text-muted);"
-       x-text="mode === 'login' ? 'Welcome back' : 'Create your free account'"></p>
+    <p class="text-xs mt-1" style="color:var(--text-muted);">
+      Sign in securely with your Google or Microsoft account
+    </p>
   </div>
 
-  <!-- Tab switcher -->
-  <div class="flex mb-5" style="background:var(--bg-panel-alt); border-radius:8px; padding:4px;">
-    <button @click="switchMode('login')"
-            :class="mode === 'login' ? 'btn btn-primary' : 'btn btn-ghost'"
-            class="flex-1" style="padding:8px;">Sign in</button>
-    <button @click="switchMode('register')"
-            :class="mode === 'register' ? 'btn btn-primary' : 'btn btn-ghost'"
-            class="flex-1" style="padding:8px;">Create account</button>
-  </div>
-
-  <form @submit.prevent="submit()" class="space-y-3">
+  <div x-show="!profileRequired" class="space-y-4">
     <div>
-      <label class="block text-xs mb-1" style="color:var(--text-secondary);">Email</label>
-      <input x-model="email" type="email" required autocomplete="email"
-             placeholder="you@example.com" class="input" />
+      <div class="text-xs mb-2 text-center" style="color:var(--text-secondary);">
+        New users and returning users use the same secure sign-in.
+      </div>
+      <div id="google-signin" class="flex justify-center min-h-[44px]"></div>
     </div>
 
-    <div>
-      <label class="block text-xs mb-1" style="color:var(--text-secondary);">
-        Password
-        <span x-show="mode === 'register'"
-              style="color:var(--text-muted);"> (min 6 chars)</span>
-      </label>
-      <input x-model="password" type="password" required
-             :minlength="mode === 'register' ? 6 : null"
-             :autocomplete="mode === 'login' ? 'current-password' : 'new-password'"
-             placeholder="••••••••" class="input" />
+    <div class="flex items-center gap-3">
+      <div class="h-px flex-1" style="background:var(--border);"></div>
+      <span class="text-xs" style="color:var(--text-muted);">OR</span>
+      <div class="h-px flex-1" style="background:var(--border);"></div>
     </div>
 
-    <div x-show="error" x-cloak
-         class="text-xs p-2 rounded"
-         style="color:#FCA5A5; background:rgba(239,68,68,.1);"
-         x-text="error"></div>
-
-    <button type="submit" :disabled="busy"
-            class="btn btn-primary w-full" style="padding:12px;">
-      <span x-show="!busy"
-            x-text="mode === 'login' ? 'Sign in' : 'Create account'"></span>
+    <button @click="signInMicrosoft()" :disabled="busy || !config.microsoft_client_id"
+            class="btn btn-secondary w-full" style="padding:12px;">
+      <span x-show="!busy">Continue with Microsoft</span>
       <span x-show="busy">Please wait…</span>
     </button>
-  </form>
+
+    <div x-show="!config.google_client_id && !config.microsoft_client_id"
+         class="text-xs p-3 rounded"
+         style="color:#FCA5A5;background:rgba(239,68,68,.1);">
+      External authentication is not configured on this server yet.
+    </div>
+  </div>
+
+  <div x-show="profileRequired" x-cloak class="space-y-4">
+    <div>
+      <h2 class="font-semibold">Complete your profile</h2>
+      <p class="text-xs mt-1" style="color:var(--text-muted);">
+        We only need your name and phone number to finish your account.
+      </p>
+    </div>
+
+    <div>
+      <label class="block text-xs mb-1" style="color:var(--text-secondary);">Full name</label>
+      <input x-model="fullName" type="text" required maxlength="120"
+             autocomplete="name" class="input" placeholder="Your full name" />
+    </div>
+
+    <div>
+      <label class="block text-xs mb-1" style="color:var(--text-secondary);">Phone number</label>
+      <input x-model="phoneNumber" type="tel" required maxlength="32"
+             autocomplete="tel" class="input" placeholder="+989121234567" />
+      <p class="text-xs mt-1" style="color:var(--text-muted);">Use international format.</p>
+    </div>
+
+    <div x-show="error" x-cloak class="text-xs p-2 rounded"
+         style="color:#FCA5A5;background:rgba(239,68,68,.1);" x-text="error"></div>
+
+    <button @click="saveProfile()" :disabled="busy"
+            class="btn btn-primary w-full" style="padding:12px;">
+      <span x-show="!busy">Continue to CryptoScanner</span>
+      <span x-show="busy">Saving…</span>
+    </button>
+  </div>
+
+  <div x-show="error && !profileRequired" x-cloak
+       class="text-xs p-2 mt-4 rounded"
+       style="color:#FCA5A5;background:rgba(239,68,68,.1);" x-text="error"></div>
 
   <p class="text-center text-xs mt-5" style="color:var(--text-muted);">
     <a href="/">← Back to scanner</a>
@@ -71,56 +92,148 @@
 
 <script src="/app.js"></script>
 <script>
+  window.handleGoogleCredential = async function(response) {
+    window.dispatchEvent(new CustomEvent('cs-provider-login', {
+      detail: { provider: 'google', idToken: response.credential }
+    }));
+  };
+
   function authApp() {
     return {
-      mode: 'login',
-      email: '',
-      password: '',
+      config: {
+        google_client_id: '',
+        microsoft_client_id: '',
+        microsoft_authority: 'https://login.microsoftonline.com/common/v2.0',
+      },
+      msalInstance: null,
+      profileRequired: false,
+      fullName: '',
+      phoneNumber: '',
       busy: false,
       error: '',
       next: '/dashboard.html',
 
-      init() {
-        // Already logged in? Go to dashboard
+      async init() {
         if (Auth.isLoggedIn()) {
           window.location.href = this.getNext();
           return;
         }
-        // Prefill email if we have it from a previous session
-        const prev = Auth.getUser();
-        if (prev && prev.email) this.email = prev.email;
 
-        const urlParams = new URLSearchParams(window.location.search);
-        const m = urlParams.get('mode');
-        if (m === 'register' || m === 'login') this.mode = m;
+        window.addEventListener('cs-provider-login', (event) => {
+          this.completeProviderLogin(event.detail.provider, event.detail.idToken);
+        });
+
+        try {
+          this.config = await API.auth.config();
+          await this.setupGoogle();
+          await this.setupMicrosoft();
+        } catch (err) {
+          this.error = err.message || 'Could not load authentication settings.';
+        }
+      },
+
+      async setupGoogle() {
+        if (!this.config.google_client_id) return;
+        for (let i = 0; i < 40 && !window.google?.accounts?.id; i++) {
+          await new Promise(resolve => setTimeout(resolve, 100));
+        }
+        if (!window.google?.accounts?.id) {
+          this.error = 'Google sign-in library could not be loaded.';
+          return;
+        }
+
+        google.accounts.id.initialize({
+          client_id: this.config.google_client_id,
+          callback: window.handleGoogleCredential,
+          ux_mode: 'popup',
+          context: 'signin',
+        });
+        google.accounts.id.renderButton(
+          document.getElementById('google-signin'),
+          { theme: 'outline', size: 'large', shape: 'rectangular', width: 360, text: 'continue_with' }
+        );
+      },
+
+      async setupMicrosoft() {
+        if (!this.config.microsoft_client_id || !window.msal) return;
+        this.msalInstance = new msal.PublicClientApplication({
+          auth: {
+            clientId: this.config.microsoft_client_id,
+            authority: this.config.microsoft_authority,
+            redirectUri: window.location.origin + '/login.html',
+          },
+          cache: {
+            cacheLocation: 'sessionStorage',
+            storeAuthStateInCookie: false,
+          },
+        });
+        if (typeof this.msalInstance.initialize === 'function') {
+          await this.msalInstance.initialize();
+        }
+      },
+
+      async signInMicrosoft() {
+        if (!this.msalInstance) {
+          this.error = 'Microsoft sign-in is not configured or has not finished loading.';
+          return;
+        }
+        this.busy = true;
+        this.error = '';
+        try {
+          const result = await this.msalInstance.loginPopup({
+            scopes: ['openid', 'profile', 'email'],
+            prompt: 'select_account',
+          });
+          if (!result.idToken) throw new Error('Microsoft did not return an identity token.');
+          await this.completeProviderLogin('microsoft', result.idToken);
+        } catch (err) {
+          this.error = err?.message || 'Microsoft sign-in failed.';
+        } finally {
+          this.busy = false;
+        }
+      },
+
+      async completeProviderLogin(provider, idToken) {
+        if (!idToken || this.busy) return;
+        this.busy = true;
+        this.error = '';
+        try {
+          const res = await API.auth.provider(provider, idToken);
+          Auth.setSession(res.access_token, res.user);
+          this.fullName = res.user.full_name || '';
+          this.phoneNumber = res.user.phone_number || '';
+          if (res.user.profile_complete) {
+            UI.success('Welcome to CryptoScanner!');
+            window.location.href = this.getNext();
+          } else {
+            this.profileRequired = true;
+          }
+        } catch (err) {
+          this.error = err.message || 'Sign-in failed.';
+        } finally {
+          this.busy = false;
+        }
+      },
+
+      async saveProfile() {
+        this.busy = true;
+        this.error = '';
+        try {
+          const user = await API.auth.updateProfile(this.fullName, this.phoneNumber);
+          Auth.setSession(Auth.getToken(), user);
+          UI.success('Profile completed.');
+          setTimeout(() => { window.location.href = this.getNext(); }, 250);
+        } catch (err) {
+          this.error = err.message || 'Could not save your profile.';
+        } finally {
+          this.busy = false;
+        }
       },
 
       getNext() {
         const params = new URLSearchParams(window.location.search);
         const n = params.get('next');
-        if (n && n.startsWith('/')) return n;
-        return '/dashboard.html';
-      },
-
-      switchMode(m) {
-        this.mode = m;
-        this.error = '';
-      },
-
-      async submit() {
-        this.busy = true;
-        this.error = '';
-        try {
-          const fn = this.mode === 'login' ? API.auth.login : API.auth.register;
-          const res = await fn(this.email.trim(), this.password);
-          Auth.setSession(res.access_token, res.user);
-          UI.success(this.mode === 'login' ? 'Welcome back!' : 'Account created!');
-          setTimeout(() => { window.location.href = this.getNext(); }, 400);
-        } catch (err) {
-          this.error = err.message || 'Something went wrong.';
-        } finally {
-          this.busy = false;
-        }
+        return n && n.startsWith('/') ? n : '/dashboard.html';
       },
     };
   }
