@@ -112,6 +112,10 @@
     admin: {
       stats: () => request('GET', '/admin/stats'),
     },
+    backtest: {
+      status: () => request('GET', '/api/backtest/status'),
+      run: (days=7) => request('GET', `/api/backtest?days=${days}`),
+    },
   };
 
   const Fmt = {
