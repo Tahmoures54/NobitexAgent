@@ -2,7 +2,7 @@
 from __future__ import annotations
 from fastapi import APIRouter, Depends, HTTPException, Query
 from sqlalchemy.orm import Session
-from server.auth import get_current_user
+from server.auth import get_current_user\nfrom server.config import settings
 from server.database import get_db
 from server.models import User
 from server.services.backtesting import run_persisted_backtest
@@ -34,4 +34,4 @@ def backtest(
 def backtest_status(user:User=Depends(get_current_user),db:Session=Depends(get_db)):
     from server.models import ScanSnapshot
     count=db.query(ScanSnapshot).count()
-    return {"snapshots":count,"retention_days":30,"message":"Snapshots are collected automatically by the scanner."}
+    return {"snapshots":count,"retention_days":settings.market_history_retention_days,"message":"Snapshots are collected automatically by the scanner."}
