@@ -40,8 +40,8 @@ services:
   - type: worker
     name: nobitexagent-worker
     runtime: docker
-    plan: free
-    dockerCommand: python worker.py
+    plan: starter
+    dockerCommand: sh -c "alembic upgrade head && python worker.py"
     envVars:
       - key: SECRET_KEY
         generateValue: true
@@ -68,6 +68,14 @@ services:
         value: "60"
       - key: SCAN_LIMIT
         value: "250"
+      - key: MARKET_HISTORY_ENABLED
+        value: "true"
+      - key: MARKET_HISTORY_RETENTION_DAYS
+        value: "30"
+      - key: MARKET_HISTORY_MAX_ROWS_PER_SCAN
+        value: "250"
+      - key: CRYPTOSSCANNER_CMC_KEY
+        sync: false
 
   - type: keyvalue
     name: nobitexagent-rate-limit
