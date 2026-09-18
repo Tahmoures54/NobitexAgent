@@ -3,16 +3,14 @@
 from __future__ import annotations
 
 import base64
-import hashlib
 import logging
-import secrets
 from datetime import datetime, timedelta, timezone
 from io import BytesIO
 from typing import Optional
 
+import jwt as pyjwt
 import pyotp
 import qrcode
-import jwt as pyjwt
 from cryptography.fernet import Fernet, InvalidToken
 from fastapi import Depends, HTTPException, status
 from fastapi.security import HTTPAuthorizationCredentials, HTTPBearer
@@ -27,7 +25,10 @@ oauth2_scheme = HTTPBearer(auto_error=False)
 
 
 def _fernet() -> Fernet:
-    key = base64.urlsafe_b64encode(hashlib.sha256(settings.secret_key.encode("utf-8")).digest())
+    """Build the Fernet cipher from the dedicated TOTP encryption key."""
+    key = base64.urlsafe_b64encode(
+        settings.totp_encryption_key.encode("utf-8")
+    )
     return Fernet(key)
 
 
