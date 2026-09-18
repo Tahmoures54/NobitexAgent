@@ -19,7 +19,8 @@ def upgrade() -> None:
         "trades",
         sa.Column("trailing_active", sa.Boolean(), nullable=False, server_default=sa.false()),
     )
-    op.alter_column("trades", "trailing_active", server_default=None)
+    with op.batch_alter_table("trades") as batch:
+        batch.alter_column("trailing_active", server_default=None)
 
 
 def downgrade() -> None:
