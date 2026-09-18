@@ -60,8 +60,28 @@
       <button @click="load()" class="btn btn-secondary btn-sm">↻ Refresh</button>
       <button @click="runBacktest()" :disabled="loading" class="btn btn-primary btn-sm" x-text="loading ? 'Running…' : 'Run 7-day Backtest'"></button>
     </div>
-    <div x-show="result" class="mt-4 text-xs" style="color:var(--text-muted);">
-      <span x-text="resultText"></span>
+    <div x-show="result" class="mt-4">
+      <div class="grid grid-cols-2 md:grid-cols-5 gap-3 mb-4">
+        <div class="panel" style="padding:12px;"><div class="text-xs" style="color:var(--text-muted);">Return</div><div class="text-lg font-bold" :class="Fmt.colorClass(result?.return_pct)" x-text="result ? Fmt.pct(result.return_pct) : '—'"></div></div>
+        <div class="panel" style="padding:12px;"><div class="text-xs" style="color:var(--text-muted);">Profit Factor</div><div class="text-lg font-bold" x-text="result ? formatPF(result.profit_factor) : '—'"></div></div>
+        <div class="panel" style="padding:12px;"><div class="text-xs" style="color:var(--text-muted);">Expectancy</div><div class="text-lg font-bold" :class="Fmt.colorClass(result?.expectancy_pct)" x-text="result ? Fmt.pct(result.expectancy_pct) : '—'"></div></div>
+        <div class="panel" style="padding:12px;"><div class="text-xs" style="color:var(--text-muted);">Max Drawdown</div><div class="text-lg font-bold text-down" x-text="result ? Fmt.pct(-Math.abs(result.max_drawdown_pct)) : '—'"></div></div>
+        <div class="panel" style="padding:12px;"><div class="text-xs" style="color:var(--text-muted);">Fees + Slippage</div><div class="text-lg font-bold" x-text="result ? Fmt.compact(Number(result.total_fees || 0) + Number(result.total_slippage_cost || 0)) : '—'"></div></div>
+      </div>
+      <div class="grid grid-cols-1 lg:grid-cols-2 gap-4">
+        <div class="panel" style="padding:14px;"><div class="font-semibold mb-2">Equity Curve</div><div class="h-40"><svg viewBox="0 0 600 160" preserveAspectRatio="none" class="w-full h-full"><polyline :points="equityPoints" fill="none" stroke="currentColor" stroke-width="2.5" vector-effect="non-scaling-stroke"></polyline></svg></div></div>
+        <div class="panel" style="padding:14px;"><div class="font-semibold mb-2">Drawdown Curve</div><div class="h-40"><svg viewBox="0 0 600 160" preserveAspectRatio="none" class="w-full h-full"><polyline :points="drawdownPoints" fill="none" stroke="currentColor" stroke-width="2.5" vector-effect="non-scaling-stroke"></polyline></svg></div></div>
+      </div>
+      <div class="panel mt-4" style="padding:14px;">
+        <div class="flex items-center justify-between mb-2"><div><div class="font-semibold">Delay Analysis</div><div class="text-xs" style="color:var(--text-muted);">Measured separately for 0 / 1 / 2 additional scans.</div></div><span class="text-xs" :class="result?.data_quality?.sufficient_for_analysis ? 'text-up' : 'text-down'" x-text="result?.data_quality?.sufficient_for_analysis ? 'Sufficient data' : 'Insufficient history'"></span></div>
+        <div style="overflow:auto;"><table class="table"><thead><tr><th>Delay</th><th>Trades</th><th>Return</th><th>Win Rate</th><th>Profit Factor</th><th>Expectancy</th><th>Drawdown</th></tr></thead><tbody><template x-for="d in (result?.delay_comparison || [])" :key="d.delay_scans"><tr><td x-text="d.delay_scans + ' scan' + (d.delay_scans === 1 ? '' : 's')"></td><td x-text="d.trades"></td><td :class="Fmt.colorClass(d.return_pct)" x-text="Fmt.pct(d.return_pct)"></td><td x-text="Number(d.win_rate_pct || 0).toFixed(1) + '%'"></td><td x-text="formatPF(d.profit_factor)"></td><td :class="Fmt.colorClass(d.expectancy_pct)" x-text="Fmt.pct(d.expectancy_pct)"></td><td class="text-down" x-text="Fmt.pct(-Math.abs(d.max_drawdown_pct || 0))"></td></tr></template></tbody></table></div>
+      </div>
+      <div class="panel mt-4" style="padding:14px;">
+        <div class="font-semibold mb-2">Signal Funnel</div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-3 text-sm"><div><span style="color:var(--text-muted);">Rows</span><div class="font-bold" x-text="result?.signal_stats?.total_rows ?? 0"></div></div><div><span style="color:var(--text-muted);">Passed</span><div class="font-bold text-up" x-text="result?.signal_stats?.passed ?? 0"></div></div><div><span style="color:var(--text-muted);">Rejected</span><div class="font-bold text-down" x-text="result?.signal_stats?.rejected ?? 0"></div></div><div><span style="color:var(--text-muted);">Blocked</span><div class="font-bold" x-text="result?.signal_stats?.blocked_by_open_position ?? 0"></div></div></div>
+        <div class="grid grid-cols-2 md:grid-cols-4 gap-2 mt-3 text-xs" style="color:var(--text-muted);"><span>Global: <b x-text="result?.signal_stats?.rejected_global_move ?? 0"></b></span><span>Observed: <b x-text="result?.signal_stats?.rejected_observed_global_move ?? 0"></b></span><span>Spread: <b x-text="result?.signal_stats?.rejected_spread ?? 0"></b></span><span>Chase: <b x-text="result?.signal_stats?.rejected_chase ?? 0"></b></span></div>
+        <div class="text-xs mt-3" style="color:var(--text-muted);" x-text="resultText"></div><div class="text-xs mt-1" style="color:var(--text-muted);" x-text="result?.data_quality?.note || ''"></div>
+      </div>
     </div>
   </div>
 
@@ -222,8 +242,16 @@
       Fmt,
       status: {},
       loading: false,
-      result: false,
+      result: null,
       resultText: '',
+      get equityPoints() { return this.makePoints(this.result?.equity_curve || [], 'capital', false); },
+      get drawdownPoints() { return this.makePoints(this.result?.drawdown_curve || [], 'drawdown_pct', true); },
+      formatPF(v) { return v === Infinity || v === 'Infinity' ? '∞' : Number(v || 0).toFixed(2); },
+      makePoints(items, key, invert) {
+        if (!items.length) return '';
+        const vals=items.map(x=>Number(x[key]||0)), min=Math.min(...vals), max=Math.max(...vals), span=(max-min)||1;
+        return vals.map((v,i)=>{const x=items.length===1?300:(i/(items.length-1))*600; const y=invert?8+((v-min)/span)*144:152-((v-min)/span)*144; return x.toFixed(1)+','+y.toFixed(1);}).join(' ');
+      },
       get statusClass() {
         const s=(this.status.status||'').toLowerCase();
         return s==='collecting' ? 'badge-buy' : s==='stale' ? 'badge-sell' : 'badge-neutral';
@@ -240,8 +268,8 @@
         this.loading=true;
         try {
           const r=await API.backtest.run(7);
-          this.result=true;
-          this.resultText=`7-day result: ${r.trades ?? 0} trades • return ${Number(r.return_pct ?? 0).toFixed(2)}% • drawdown ${Number(r.max_drawdown_pct ?? 0).toFixed(2)}% • snapshots ${r.snapshots ?? 0}`;
+          this.result=r;
+          this.resultText="7-day result: "+(r.trades ?? 0)+" trades • "+Number(r.return_pct ?? 0).toFixed(2)+"% return • "+(r.snapshots ?? 0)+" snapshots • "+Number(r.data_quality?.duration_hours ?? 0).toFixed(1)+"h of history";
         } catch(err) { UI.error(err.message || 'Backtest failed.'); }
         finally { this.loading=false; }
       }
