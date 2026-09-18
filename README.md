@@ -122,3 +122,17 @@ Never put Nobitex API credentials in GitHub, `.env.example`, Docker images, or f
 
     Root local entry point: main.py
     FastAPI ASGI application: server.main:app
+
+
+## Production market-history worker
+
+Market-history collection is intentionally separated from the Web/API process.
+
+- **Web/API:** keep `RUN_SCHEDULER=false`. This is safe for Vercel or a Render web service.
+- **Worker:** run `worker.py` with `RUN_SCHEDULER=true`. It runs the scanner every `SCAN_INTERVAL_MINUTES` (default 5 minutes) and persists each snapshot to PostgreSQL.
+- The Render Blueprint runs `alembic upgrade head` before starting the worker, so the collector can start safely against the shared database.
+- Set the same `CRYPTOSSCANNER_CMC_KEY` on the worker if you want persisted snapshots to contain CoinMarketCap global-lead fields used by the lead/lag backtest.
+- The worker must use the same `DATABASE_URL` as the Web/API service.
+- Do not run a second scheduler in the Web/API service; duplicate schedulers would create duplicate snapshots.
+
+Render currently does not offer Free instances for Background Workers, so the always-on collector uses the smallest paid worker plan in the Blueprint.
