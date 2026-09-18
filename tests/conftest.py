@@ -29,7 +29,7 @@ if PROJECT_ROOT not in sys.path:
 # ── Set safe env vars BEFORE importing the app ─────────────
 os.environ.setdefault("SECRET_KEY", "test-secret-key-do-not-use-in-production")
 os.environ.setdefault("TOTP_ENCRYPTION_KEY", "test-totp-encryption-key-do-not-use-in-production")
-os.environ.setdefault("DATABASE_URL", "sqlite:///:memory:")
+os.environ["DATABASE_URL"] = "sqlite:///:memory:"
 os.environ.setdefault("DEBUG", "false")
 os.environ.setdefault("ADMIN_EMAIL", "admin@test.local")
 os.environ.setdefault("SCAN_INTERVAL_MINUTES", "60")  # quiet in tests
@@ -130,7 +130,7 @@ def db_session(db_engine) -> Generator[Session, None, None]:
 # FastAPI TestClient (with overridden DB)
 # ══════════════════════════════════════════════════════════
 @pytest.fixture(scope="function")
-def client(db_session) -> Generator[TestClient, None, None]:
+def client(db_session, request) -> Generator[TestClient, None, None]:
     """
     TestClient with `get_db` overridden to use the test session.
 
@@ -148,7 +148,8 @@ def client(db_session) -> Generator[TestClient, None, None]:
     app.dependency_overrides[get_db] = _override_get_db
 
     # Instantiate TestClient WITHOUT triggering lifespan
-    c = TestClient(app, raise_server_exceptions=True)
+    test_ip = "test-" + str(abs(hash(request.node.nodeid)))
+    c = TestClient(app, raise_server_exceptions=True, client=(test_ip, 50000))
 
     try:
         yield c
