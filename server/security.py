@@ -23,6 +23,7 @@ limiter = Limiter(
     key_func=get_remote_address,
     default_limits=[],
     storage_uri=settings.redis_url or "memory://",
+    headers_enabled=True,
 )
 
 
@@ -68,13 +69,7 @@ def require_admin(user: User = Depends(get_current_user)) -> User:
 
 # ── Client info helpers (for audit log) ────────────────────
 def client_ip(request: Request) -> str:
-    """Best-effort client IP behind a reverse proxy."""
-    fwd = request.headers.get("x-forwarded-for")
-    if fwd:
-        return fwd.split(",")[0].strip()
-    real = request.headers.get("x-real-ip")
-    if real:
-        return real.strip()
+    """Return the peer address without trusting client-supplied proxy headers."""
     return request.client.host if request.client else "unknown"
 
 
