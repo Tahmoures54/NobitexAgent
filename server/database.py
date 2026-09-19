@@ -5,7 +5,10 @@ SQLAlchemy engine, session factory, and Base.
 Notes
 -----
 - Uses SQLite with WAL mode by default for dev (fast + safe).
-- Switching to Postgres requires only changing `DATABASE_URL`.
+- Postgres is supported via `psycopg` v3 (Neon-compatible).
+  The DATABASE_URL is auto-normalized:
+    postgresql://...   -> postgresql+psycopg://...
+    postgres://...     -> postgresql+psycopg://...
 - `get_db` is a FastAPI dependency that yields one session per request.
 """
 from __future__ import annotations
@@ -22,18 +25,55 @@ from server.config import settings
 logger = logging.getLogger(__name__)
 
 
+# ── URL normalization (Postgres → psycopg v3) ───────────────
+def _normalize_db_url(url: str) -> str:
+    """
+    Make DATABASE_URL compatible with SQLAlchemy 2.x + psycopg v3.
+
+    SQLAlchemy defaults to the psycopg2 dialect for `postgresql://`,
+    which is NOT installed on Vercel. We rewrite the scheme so
+    SQLAlchemy uses the psycopg v3 dialect instead.
+    """
+    if url.startswith("postgresql+psycopg://"):
+        return url
+    if url.startswith("postgresql+psycopg2://"):
+        return url.replace("postgresql+psycopg2://", "postgresql+psycopg://", 1)
+    if url.startswith("postgresql://"):
+        return url.replace("postgresql://", "postgresql+psycopg://", 1)
+    if url.startswith("postgres://"):
+        return url.replace("postgres://", "postgresql+psycopg://", 1)
+    return url
+
+
+_db_url = _normalize_db_url(settings.database_url)
+_is_sqlite = _db_url.startswith("sqlite")
+
+
 # ── Engine ─────────────────────────────────────────────────
-_is_sqlite = settings.database_url.startswith("sqlite")
+_connect_args: dict = {}
 
-_connect_args = {"check_same_thread": False} if _is_sqlite else {}
+if _is_sqlite:
+    _connect_args = {"check_same_thread": False}
 
-engine: Engine = create_engine(
-    settings.database_url,
-    echo=False,
-    future=True,
-    pool_pre_ping=True,
-    connect_args=_connect_args,
-)
+# Pool settings:
+# - SQLite: use default (no pool tuning needed for dev)
+# - Postgres + Neon pooler: keep small pool to avoid exhausting connections
+_engine_kwargs: dict = {
+    "echo": False,
+    "future": True,
+    "pool_pre_ping": True,
+    "connect_args": _connect_args,
+}
+
+if not _is_sqlite:
+    _engine_kwargs.update(
+        pool_size=5,
+        max_overflow=5,
+        pool_recycle=1800,   # recycle every 30 min (Neon idle timeout)
+        pool_timeout=30,
+    )
+
+engine: Engine = create_engine(_db_url, **_engine_kwargs)
 
 
 # ── SQLite tuning (WAL + foreign keys) ─────────────────────
@@ -94,8 +134,9 @@ def init_db() -> None:
 
     Base.metadata.create_all(bind=engine)
     logger.info(
-        "Database initialized | url=%s | tables=%d",
+        "Database initialized | url=%s | driver=%s | tables=%d",
         _mask_url(settings.database_url),
+        engine.dialect.name,
         len(Base.metadata.tables),
     )
 
