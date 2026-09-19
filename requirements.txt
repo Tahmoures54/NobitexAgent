@@ -35,11 +35,9 @@ email-validator>=2.0.0
 sqlalchemy>=2.0.0
 alembic>=1.13.0
 
-# Postgres drivers — used by hosted production deployments.
-# psycopg2-binary is required by SQLAlchemy's default "postgresql://"
-# dialect. psycopg (v3) is kept for future migration to the modern
-# "postgresql+psycopg://" URL.
-psycopg2-binary>=2.9.9,<3.0.0
+# Postgres driver — psycopg v3 (SQLAlchemy 2.x dialect: postgresql+psycopg://)
+# server/database.py auto-rewrites "postgresql://" → "postgresql+psycopg://"
+# so SQLAlchemy does NOT need psycopg2.
 psycopg[binary]>=3.2.0,<4.0.0
 
 # ── Auth / crypto ───────────────────────────────────────────
