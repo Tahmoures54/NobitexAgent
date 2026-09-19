@@ -6,6 +6,14 @@ Three log files under `logs/`:
     - application.log  → everything (INFO+)
     - security.log     → auth/login/admin events (from `server.security`)
     - trading.log      → paper/real trading events (from `server.trading`)
+
+Notes
+-----
+- On serverless platforms (Vercel, AWS Lambda), the filesystem is
+  read-only except for `/tmp`. We auto-detect this and:
+    1. Redirect file logs to `/tmp/logs/` when possible.
+    2. Fall back to console-only logging if even `/tmp` fails.
+- On Vercel, use the Dashboard → Logs tab to view output (stdout).
 """
 from __future__ import annotations
 
@@ -16,8 +24,20 @@ from typing import Optional
 
 from server.config import settings
 
+# ── Detect read-only filesystem (Vercel / Lambda) ──────────
+_IS_SERVERLESS = bool(
+    os.environ.get("VERCEL")
+    or os.environ.get("AWS_LAMBDA_FUNCTION_NAME")
+    or os.environ.get("AWS_EXECUTION_ENV")
+)
+
 # ── Constants ──────────────────────────────────────────────
-LOG_DIR = "logs"
+if _IS_SERVERLESS:
+    # Only /tmp is writable on Vercel/Lambda
+    LOG_DIR = "/tmp/logs"
+else:
+    LOG_DIR = "logs"
+
 APP_LOG = os.path.join(LOG_DIR, "application.log")
 SECURITY_LOG = os.path.join(LOG_DIR, "security.log")
 TRADING_LOG = os.path.join(LOG_DIR, "trading.log")
@@ -35,17 +55,30 @@ def _make_formatter() -> logging.Formatter:
     return logging.Formatter(_FMT, datefmt=_DATE_FMT)
 
 
-def _make_file_handler(path: str, level: int) -> RotatingFileHandler:
-    os.makedirs(os.path.dirname(path), exist_ok=True)
-    handler = RotatingFileHandler(
-        path,
-        maxBytes=MAX_BYTES,
-        backupCount=BACKUP_COUNT,
-        encoding="utf-8",
-    )
-    handler.setLevel(level)
-    handler.setFormatter(_make_formatter())
-    return handler
+def _make_file_handler(path: str, level: int) -> Optional[RotatingFileHandler]:
+    """
+    Build a RotatingFileHandler safely.
+
+    Returns None if the filesystem is not writable — the caller
+    should then skip adding it. The console handler will still
+    emit everything (useful on Vercel).
+    """
+    try:
+        os.makedirs(os.path.dirname(path), exist_ok=True)
+        handler = RotatingFileHandler(
+            path,
+            maxBytes=MAX_BYTES,
+            backupCount=BACKUP_COUNT,
+            encoding="utf-8",
+        )
+        handler.setLevel(level)
+        handler.setFormatter(_make_formatter())
+        return handler
+    except OSError as exc:
+        # On Vercel the FS is read-only; /tmp usually works, but
+        # if it doesn't we silently skip the file handler.
+        print(f"[logging_config] file handler disabled ({path}): {exc}", flush=True)
+        return None
 
 
 class _SecurityFilter(logging.Filter):
@@ -82,26 +115,33 @@ def setup_logging(level: Optional[int] = None) -> None:
     root.setLevel(level)
     root.handlers.clear()
 
+    # Console handler (always present — critical on Vercel)
     console = logging.StreamHandler()
     console.setLevel(level)
     console.setFormatter(_make_formatter())
     root.addHandler(console)
 
+    # Application file handler (optional)
     app_file = _make_file_handler(APP_LOG, level)
-    root.addHandler(app_file)
+    if app_file is not None:
+        root.addHandler(app_file)
 
     # ── Security logger ────────────────────────────────────
     sec_logger = logging.getLogger("server.security")
+    sec_logger.setLevel(logging.INFO)
     sec_handler = _make_file_handler(SECURITY_LOG, logging.INFO)
-    sec_handler.addFilter(_SecurityFilter())
-    sec_logger.addHandler(sec_handler)
+    if sec_handler is not None:
+        sec_handler.addFilter(_SecurityFilter())
+        sec_logger.addHandler(sec_handler)
     sec_logger.propagate = True  # also goes to app.log + console
 
     # ── Trading logger ─────────────────────────────────────
     trd_logger = logging.getLogger("server.trading")
+    trd_logger.setLevel(logging.INFO)
     trd_handler = _make_file_handler(TRADING_LOG, logging.INFO)
-    trd_handler.addFilter(_TradingFilter())
-    trd_logger.addHandler(trd_handler)
+    if trd_handler is not None:
+        trd_handler.addFilter(_TradingFilter())
+        trd_logger.addHandler(trd_handler)
     trd_logger.propagate = True
 
     # ── Quiet third-party loggers ──────────────────────────
@@ -119,9 +159,10 @@ def setup_logging(level: Optional[int] = None) -> None:
 
     _configured = True
     logging.getLogger(__name__).info(
-        "Logging configured | level=%s | dir=%s",
+        "Logging configured | level=%s | dir=%s | serverless=%s",
         logging.getLevelName(level),
-        os.path.abspath(LOG_DIR),
+        LOG_DIR,
+        _IS_SERVERLESS,
     )
 
 
