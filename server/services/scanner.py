@@ -14,6 +14,7 @@ _LOCK=threading.RLock()
 _CACHE={"rows":[],"updated_at":0.0,"error":None,"source":None}
 _HISTORY=defaultdict(lambda: deque(maxlen=30))
 
+
 def get_cached():
     with _LOCK:
         rows=list(_CACHE["rows"]); updated=float(_CACHE["updated_at"]); error=_CACHE["error"]; source=_CACHE["source"]
@@ -28,8 +29,10 @@ def get_cached():
     except Exception: logger.exception("Persisted scanner cache read failed")
     return {"rows":rows,"updated_at":updated,"error":error,"source":source,"count":len(rows)}
 
+
 def is_fresh(max_age_seconds=300):
     with _LOCK: return bool(_CACHE["rows"]) and time.time()-_CACHE["updated_at"]<max_age_seconds
+
 
 def _json_safe(v):
     if v is None:return None
@@ -40,13 +43,16 @@ def _json_safe(v):
     if isinstance(v,(int,str,bool)):return v
     return v
 
+
 def _records_from_df(df):
     if df is None or df.empty:return []
     df=df.where(pd.notnull(df),None)
     return [{k:_json_safe(v) for k,v in row.items()} for row in df.to_dict(orient="records")]
 
+
 def _build_nobitex_client():
     return NobitexClient(quote_currency="IRT",testnet=False)
+
 
 def _fetch_nobitex(limit):
     client=_build_nobitex_client()
@@ -55,6 +61,7 @@ def _fetch_nobitex(limit):
     rows=[r for r in rows if float(r.get("Price") or 0)>0]
     rows.sort(key=lambda r:float(r.get("Volume") or 0),reverse=True)
     return pd.DataFrame(rows[:max(1,int(limit))])
+
 
 def _fetch_global_map(symbols):
     """Best-effort CMC enrichment. Failure never blocks the Nobitex scanner."""
@@ -82,6 +89,7 @@ def _fetch_global_map(symbols):
         logger.warning("Global CMC enrichment failed; local snapshot retained: %s",exc)
         return {}
 
+
 def _history_features(symbol,price,volume):
     now=time.time()
     with _LOCK:
@@ -93,6 +101,7 @@ def _history_features(symbol,price,volume):
     def pct(old,new): return (new-old)/old*100 if old and old>0 and new>0 else 0.0
     p5,p15,p30=at(300),at(900),at(1800)
     return {"5m Change (%)":pct(p5,price) if p5 else 0.0,"15m Change (%)":pct(p15,price) if p15 else 0.0,"30m Change (%)":pct(p30,price) if p30 else 0.0}
+
 
 def _classify_market(row):
     ch5=float(row.get("5m Change (%)") or 0); ch15=float(row.get("15m Change (%)") or 0); ch30=float(row.get("30m Change (%)") or 0); ch24=float(row.get("24h Change (%)") or 0)
@@ -119,6 +128,7 @@ def _classify_market(row):
     else:condition="SIDEWAYS"
     return condition,round(pump,2),round(trend,2),reasons
 
+
 def _enrich(df):
     if df is None or df.empty:return df
     global_map=_fetch_global_map([str(x).upper() for x in df["Symbol"].tolist()])
@@ -135,9 +145,25 @@ def _enrich(df):
                     "Risk_Level":"High" if condition in {"STRONG_PUMP","PUMP"} and float(row.get("5m Change (%)") or 0)>=5 else "Medium",
                     "Reasons":"; ".join(reasons) if reasons else "No strong momentum confirmation"})
         if symbol in global_map: row.update(global_map[symbol])
-        \n        if price > 0 and float(row.get("Bid") or 0) > 0:\n            row["SpreadPct"]=(float(row.get("Ask") or price)-float(row.get("Bid") or price))/float(row.get("Bid") or price)*100.0\n        else:\n            row["SpreadPct"]=0.0\n        row["ChasePct"]=max(0.0,(float(row.get("Ask") or price)-price)/price*100.0) if price>0 else 0.0\n        row["SnapshotTimestamp"]=time.time()
+
+        # ── Spread & Chase % (was previously a literal-\\n line) ──
+        if price > 0 and float(row.get("Bid") or 0) > 0:
+            row["SpreadPct"] = (
+                float(row.get("Ask") or price) - float(row.get("Bid") or price)
+            ) / float(row.get("Bid") or price) * 100.0
+        else:
+            row["SpreadPct"] = 0.0
+
+        row["ChasePct"] = (
+            max(0.0, (float(row.get("Ask") or price) - price) / price * 100.0)
+            if price > 0
+            else 0.0
+        )
+        row["SnapshotTimestamp"] = time.time()
+
         enriched.append(row)
     return pd.DataFrame(enriched)
+
 
 def run_scan(persist_snapshot=False):
     try:
@@ -157,6 +183,7 @@ def run_scan(persist_snapshot=False):
         with _LOCK:_CACHE.update(error="Nobitex scan failed",source="nobitex")
         return 0
 
+
 def _persist_snapshot(records):
     if not settings.market_history_enabled:return
     from server.models import ScanSnapshot
@@ -171,6 +198,7 @@ def _persist_snapshot(records):
         db.commit()
     finally:db.close()
 
+
 def get_symbol_price(symbol):
     if not symbol:return None
     sym=symbol.upper().strip()
@@ -180,5 +208,6 @@ def get_symbol_price(symbol):
                 p=row.get("Price")
                 if isinstance(p,(int,float)) and p>0:return float(p)
     return None
+
 
 __all__=["run_scan","get_cached","is_fresh","get_symbol_price"]
